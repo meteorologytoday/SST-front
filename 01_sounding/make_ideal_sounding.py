@@ -19,8 +19,11 @@ parser.add_argument('--Delta-Gamma-ft', type=float, help='Relative humidity (%) 
 parser.add_argument('--U', type=float, help='Wind in the x-direction.', default=0.0)
 parser.add_argument('--V', type=float, help='Wind in the y-direction', default=0.0)
 
-parser.add_argument('--total-height', type=str, help='Total atmospheric height (m).', default=23e3)
-parser.add_argument('--Nz', type=str, help='Number of points.', default=500)
+parser.add_argument('--no-display', action="store_true")
+parser.add_argument('--output-fig', type=str, help='Output figure filename.', default="")
+
+parser.add_argument('--total-height', type=float, help='Total atmospheric height (m).', default=23e3)
+parser.add_argument('--Nz', type=float, help='Number of points.', default=500)
 
 args = parser.parse_args()
 
@@ -168,11 +171,18 @@ writeWRFSounding(args.output, df_sfc, df_sdg)
 
 
 
+print("Loading matplotlib...")
 import matplotlib
-matplotlib.use('TkAgg')
-
+if args.no_display:
+    matplotlib.use('Agg')
+else:
+    matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+print("Done")
+
 import matplotlib.transforms as transforms
+
+
 
 
 fig, ax = plt.subplots(1, 3, sharey=True)
@@ -203,6 +213,11 @@ ax[2].set_xlim([-20, 20])
 
 ax[0].set_ylim([0, 8000])
 
-plt.show()
+if args.output_fig != "":
+    print("Saving output figure: ", args.output_fig)
+    fig.savefig(args.output_fig, dpi=300)
 
+if not args.no_display:
+    print("Showing figure...")
+    plt.show()
 

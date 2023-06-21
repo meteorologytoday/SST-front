@@ -10,6 +10,9 @@
 *.npz
 *.zip
 *.pyc
+*.ref
+*.exe
+*.png
 
 src/ww3_gridgen
 src/ww3_bathy
