@@ -1,0 +1,16 @@
+*.nc
+*.bin
+*.swp
+*.tmp
+*.asv
+*.mat
+*.meta
+*.data
+*.tar
+*.npz
+*.zip
+*.pyc
+
+src/ww3_gridgen
+src/ww3_bathy
+src/mitgcm-preprocess/set-mask
