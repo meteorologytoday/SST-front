@@ -10,10 +10,14 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--wrfout', type=str, help='Input directory.', required=True)
 parser.add_argument('--output', type=str, help='Output filename in png.', default="")
 parser.add_argument('--title', type=str, help='Title', default="")
+parser.add_argument('--blh-method', type=str, help='Method to determine boundary layer height', default=["grad", "bulk"], nargs='+', choices=['bulk', 'grad'])
 parser.add_argument('--SST-rng', type=float, nargs=2, help='Title', default=[14.5, 16.5])
 parser.add_argument('--no-display', action="store_true")
+parser.add_argument('--plot-check', action="store_true")
 parser.add_argument('--time-idx', type=int, nargs=2, required=True)
 args = parser.parse_args()
+
+print(args)
 
 # Loading data
 print("Loading file: %s" % (args.wrfout,))
@@ -46,39 +50,40 @@ SST = ds.TSK - 273.15
 
 
 print("Compute boundary layer height")
-blh_grad = np.zeros((Nx,))
-blh_bulk = np.zeros((Nx,))
+bl = dict()
 
-for i in range(len(blh_grad)):
 
-    U = (ds.U[:, i+1] + ds.U[:, i]) / 2
- 
-    blh_grad[i] = diagnostics.getBoundaryLayerHeight(
-        U.to_numpy(),
-        ds.V[:, i].to_numpy(),
-        theta[:, i].to_numpy(),
-        ds.QVAPOR[:, i].to_numpy(),
-        Z_W[:, i].to_numpy(),
-        Ri_c = 0.25,
-        method='grad',
-        skip=1,
-    )
-  
-     
-    blh_bulk[i] = diagnostics.getBoundaryLayerHeight(
-        U.to_numpy(),
-        ds.V[:, i].to_numpy(),
-        theta[:, i].to_numpy(),
-        ds.QVAPOR[:, i].to_numpy(),
-        Z_W[:, i].to_numpy(),
-        Ri_c = 0.25,
-        method='bulk',
-        skip=1,
-    )
-
-    #print("[%d] : %f" % (i, blh_bulk[i]))
+for method in args.blh_method:
     
+    _blh = []
+    _Ri = np.zeros((Nz+1, Nx,))
+    for i in range(Nx):
 
+        U = (ds.U[:, i+1] + ds.U[:, i]) / 2
+
+        r = diagnostics.getBoundaryLayerHeight(
+            U.to_numpy(),
+            ds.V[:, i].to_numpy(),
+            theta[:, i].to_numpy(),
+            ds.QVAPOR[:, i].to_numpy(),
+            Z_W[:, i].to_numpy(),
+            Ri_c = 0.25,
+            method=method,
+            skip=1,
+            debug=True,
+        )
+
+        for j, __blh in enumerate(r[0]):
+            _blh.append([X_sT[i], __blh])
+
+        _Ri[:, i] = r[1]['Ri']
+
+    _blh = np.array(_blh)
+
+    bl[method] = dict(
+        blh = _blh,
+        Ri  = _Ri,
+    )
 
 print("Loading matplotlib...")
 import matplotlib
@@ -88,6 +93,60 @@ else:
     matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 print("Done")
+
+if args.plot_check:
+
+    loc = 250    
+    U = (ds.U[:, loc+1] + ds.U[:, loc]) / 2
+    h, debug_info = diagnostics.getBoundaryLayerHeight(
+        U.to_numpy(),
+        ds.V[:, loc].to_numpy(),
+        theta[:, loc].to_numpy(),
+        ds.QVAPOR[:, loc].to_numpy(),
+        Z_W[:, loc],
+        Ri_c = 0.25,
+        method = args.blh_method,
+        skip = 0,
+        debug = True,
+    )
+
+
+    fig, ax = plt.subplots(1, 6, figsize=(12, 6), sharey=True)
+
+
+    ax[0].plot(U,  Z_T[:, loc], label="U")
+    ax[0].plot(ds.V[:, loc],  Z_T[:, loc], label="V")
+    ax[1].plot(theta[:, loc], Z_T[:, loc], label="$\\theta$")
+
+
+    if args.blh_method == "bulk":
+        ax[2].plot(debug_info['theta_v'], Z_W[:, loc], label="$\\theta_v$")
+        ax[3].plot(debug_info['dtheta_v'], Z_W[:, loc], label="$\\partial \\theta_v / \\partial z$")
+        ax[4].plot(debug_info['du'], Z_W[:, loc], label="$u_z$")
+        ax[4].plot(debug_info['dv'], Z_W[:, loc], label="$v_z$")
+
+
+
+    elif args.blh_method == "grad":
+        ax[2].plot(debug_info['theta_v'], Z_W[:, loc], label="$\\theta_v$")
+        ax[3].plot(debug_info['dtheta_vdz'], Z_W[:, loc], label="$\\partial \\theta_v / \\partial z$")
+        ax[4].plot(debug_info['dudz'], Z_W[:, loc], label="$u_z$")
+        ax[4].plot(debug_info['dvdz'], Z_W[:, loc], label="$v_z$")
+        
+    else:
+        raise Exception("Unknown keyword: %s" % (args.blh_method,))
+
+    ax[5].plot(debug_info['Ri'], Z_W[:, loc], label="$R_i$", linestyle="dotted")
+    ax[5].plot(Ri[:, loc], Z_W[:, loc], label="$R_i$ - 2", linestyle="dashed")
+    ax[5].set_xlim([-1, 1])
+
+    for _ax in ax.flatten():
+        _ax.legend()
+        _ax.grid()
+
+    ax[0].set_ylim([0, 2000])
+
+    plt.show(block=False)
 
 fig, ax = plt.subplots(
     4, 1,
@@ -111,8 +170,19 @@ mappable1 = ax[0].contourf(X_W, Z_W, ds.W * 1e2, levels=w_levs, cmap="bwr", exte
 cs = ax[0].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
 plt.clabel(cs)
 
-ax[0].plot(X_sT, blh_grad, linestyle='solid', color="lime")
-ax[0].plot(X_sT, blh_bulk, linestyle='solid', color="magenta")
+
+#cs = ax[0].contour(X_W, Z_W, Ri_grad, levels=[0.1, 0.25, 0.5, 0.75, 1.0], colors='green', linestyles='dashed', linewidths=1)
+#plt.clabel(cs)
+
+#ax[0].plot(X_sT, blh_grad, linestyle='solid', color="lime")
+#ax[0].plot(X_sT, blh_bulk, linestyle='solid', color="magenta")
+
+#ax[0].scatter(blh_grad[:, 0], blh_grad[:, 1], s=5, c="lime")
+
+for method in args.blh_method:
+    blh = bl[method]['blh']
+    color = dict(grad="lime", bulk="cyan")[method]
+    ax[0].scatter(blh[:, 0], blh[:, 1], s=2, c=color)
 
 cax = tool_fig_config.addAxesNextToAxes(fig, ax[0], "right", thickness=0.03, spacing=0.05)
 cbar1 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
