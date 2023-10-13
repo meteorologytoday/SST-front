@@ -22,8 +22,8 @@ exp_names=""
 input_dirs=""
 for dT in -100 -75 -50 -25 000 025 050 075 100 ; do
     for wid in 050 ; do
-        for MLsetup in wML ; do
-            for MLscheme in YSU ; do 
+        for MLsetup in woML ; do
+            for MLscheme in MYNN ; do 
                 for wpkt in 01 ; do
                     input_dirs="$input_dirs $input_dir_root/case_mph-on_dT${dT}_wid${wid}_${MLsetup}_${MLscheme}_wpkt${wpkt}"
                     exp_names="$exp_names $dT"
@@ -57,6 +57,7 @@ for i in $( seq 0 7 ); do
         --no-display           \
         --output $output_name  &
 
+    if [ ] ; then
     output_name="$output_dir/comparison_wML_${hrs_beg}-${hrs_end}.png"
     python3 plot_comparison.py  \
         --input-dirs $input_dirs  \
@@ -64,7 +65,9 @@ for i in $( seq 0 7 ); do
         --time-rng $hrs_beg $hrs_end \
         --exp-names $exp_names \
         --no-display \
-        --output $output_name & 
+        --output $output_name &
+    fi
+
 done
 
 wait

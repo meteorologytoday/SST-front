@@ -1,16 +1,24 @@
 #!/bin/bash
 
-fig_dir=figures_exp02_compare_ML_and_bl_scheme
+nproc=10
 
-input_dir=/home/t2hsu/projects/SST-front/11_SST_gaussian/lab_gaussian/case_mph-off_dT100_wid050_woML_MYNN3_wpkt01
-#input_dir=/home/t2hsu/projects/SST-front/11_SST_gaussian/lab_gaussian/case_mph-off_dT100_wid050_woML_YSU_wpkt01
+archive_root=/home/t2hsu/projects/SST-front/11_SST_gaussian/lab_gaussian
+output_root=./output_budget_analysis
+casename=case_mph-off_dT100_wid050_woML_MYNN3_wpkt01
+
+input_dir=$archive_root/$casename
+output_dir=$output_root/$casename
+
+beg_hr=12
+end_hr=36
 
 python3 budget_analysis.py  \
     --input-dir $input_dir  \
-    --time-rng 12 13 \
-    --timestep 60 \
-    --title-template time \
-    --overlay \
-    --exp-beg-time 2001-01-01 \
-    --output example.png
+    --output-dir $output_dir \
+    --time-rng $(( $beg_hr * 60 ))  $(( $end_hr * 60 )) \
+    --wrfout-data-interval 60 \
+    --frames-per-wrfout-file 60 \
+    --nproc $nproc \
+    --exp-beg-time 2001-01-01
+
 

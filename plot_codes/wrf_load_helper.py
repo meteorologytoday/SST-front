@@ -7,15 +7,39 @@ import re
 from datetime import datetime
 
 engine = "scipy"
+wrfout_time_fmt="%Y-%m-%d_%H:%M:%S"
+wrfout_prefix="wrfout_d01_"
+
+class WRFSimMetadata:
+
+    def __init__(self, start_datetime, data_interval, frames_per_file):
+
+        self.start_datetime = pd.Timestamp(start_datetime)
+        self.data_interval = data_interval
+        self.frames_per_file = frames_per_file
+        self.file_interval = frames_per_file * data_interval
 
 
+def missingFiles(fnames):
+    
+    missing_files = []
 
+    for fname in fnames:
+        if not os.path.isfile(fname):
+            missing_files.append(fname)
+
+    return missing_files
+        
 def findfirst(a):
-    return np.argmax(a)
 
-def findlast(a):
-    return (len(a) - 1) - np.argmax(a[::-1])
+    idx = -1
 
+    for i, _a in enumerate(a):
+        if _a:
+            idx = i
+            break
+
+    return idx
 
 def findArgRange(arr, lb, ub, inclusive="both"):
     if lb > ub:
@@ -38,34 +62,90 @@ def findArgRange(arr, lb, ub, inclusive="both"):
 
 
 
-class WRFSimMetadata:
 
-    def __init__(self, start_datetime, data_freq, frames_per_file):
-
-        self.start_datetime = pd.Timestamp(start_datetime)
-        self.data_freq = data_freq
-        self.frames_per_file = frames_per_file
+def computeIndex(wsm, index_time=None, time_passed=None):
+    
+    if not ( ( index_time is None ) ^ (time_passed is None) ):
+        raise Exception("Only one of the parameters, `index_time` and `time_passed`, can and must be given.")
 
 
-def getFilenameAndFrameFromDate(dt, wsm : WRFSimMetadata, prefix="wrfout_d01_", time_fmt="%Y-%m-%d_%H:%M:%S"):
+    if index_time is not None:
+        if type(index_time) == str:
+            index_time = pd.Timestamp(index_time) 
+     
+        delta_time = index_time - wsm.start_datetime
+    
+    elif time_passed is not None:
+        delta_time = time_passed
+
+
+    delta_frames = delta_time / wsm.data_interval
+
+    if delta_frames % 1.0 != 0.0:
+
+        print("Debug message: computed delta_time = ", delta_time)
+        print("Debug message: computed delta_frames = ", delta_frames)
+
+        if index_time is not None:
+            raise Exception("The provided `index_time` is not a multiple of `data_interval` away from `start_datetime`.")
+        elif time_passed is not None:
+            raise Exception("The provided `time_passed` is not a multiple of `data_interval` away from `start_datetime`.")
+
+
+    # Now compute the file and frame in file
+    delta_frames = int(delta_frames)
+    delta_files = int( np.floor( delta_frames / wsm.frames_per_file ) )
+    frame = delta_frames - delta_files * wsm.frames_per_file
+
+    file_time = wsm.start_datetime + delta_files * wsm.file_interval
+
+    return file_time, frame
+
+
+def genInclusiveBounds(beg_dt, end_dt, interval, inclusive):
+
+    if inclusive == "left":
+        _beg_dt = beg_dt
+        _end_dt = end_dt - wsm.data_interval
+
+    elif inclusive == "right":
+        _beg_dt = beg_dt + wsm.data_interval
+        _end_dt = end_dt
+
+    elif inclusive == "both":
+        _beg_dt = beg_dt
+        _end_dt = end_dt
+
+    elif inclusive == "neither":
+        _beg_dt = beg_dt + wsm.data_interval
+        _end_dt = end_dt - wsm.data_interval
+
+    else:
+        raise Exception("Unknown `inclusive` keyword %s. Only accept: left, right, both, neither." % (inclusive,))
+
+    return _beg_dt, _end_dt
+
+
+def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_prefix, dirname=None, time_fmt=wrfout_time_fmt):
    
-    if type(dt) == str:
-        dt = pd.Timestamp(dt) 
- 
-    delta_time = dt - wsm.start_datetime
-    frames_diff = delta_time / wsm.data_freq
-
-    file_diff = int( np.floor( frames_diff / wsm.frames_per_file ) )
-    frame = int( frames_diff % wsm.frames_per_file )
-
-    _dt = dt + wsm.data_freq * (wsm.frames_per_file * file_diff)
+    beg_dt, end_dt = genInclusiveBounds(time_rng[0], time_rng[1], wsm.data_interval, inclusive)
    
-    filename = "%s%s.nc" % (prefix, _dt.strftime(time_fmt))
- 
-    return filename, frame
+     
+    firstfile_dt, _ = computeIndex(wsm, index_time=beg_dt)
+    lastfile_dt,  _ = computeIndex(wsm, index_time=end_dt)
+
+    dts = pd.date_range(start=firstfile_dt, end=lastfile_dt, freq=wsm.file_interval, inclusive="both")
+    
+    fnames = [ "%s%s" % (prefix, dt.strftime(time_fmt),) for dt in dts ]
+
+    if dirname is not None:
+        for i in range(len(fnames)):
+            fnames[i] = os.path.join(dirname, fnames[i])
+    
+    return fnames
 
 
-def listWRFOutputFiles(dirname, prefix="wrfout_d01_", append_dirname=False, time_rng=None):
+def listWRFOutputFiles(dirname, prefix=wrfout_prefix, append_dirname=False, time_rng=None):
 
     valid_files = []
     
@@ -108,26 +188,51 @@ def _loadWRFTimeOnly(filename):
     return t
 
 
-def loadWRFDataFromDir(input_dir, prefix="wrfout_d01_", time_rng=None, extend_time=None, verbose=False, avg=False):
+def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_prefix, time_fmt=wrfout_time_fmt, verbose=False, avg=False, inclusive="left"):
     
-    if time_rng is not None and extend_time is not None:
-        load_time_rng = [time_rng[0] - extend_time, time_rng[1] + extend_time]
+    if end_time is None:
 
-    else:
-        load_time_rng = time_rng
+        inclusive = "both"
+        end_time = beg_time
+  
+    if verbose:
+        print("[loadWRFDataFromDir] Going to load time range: [", beg_time, ", ", end_time, "]")
+ 
+    fnames = genFilenameFromDateRange(
+        wsm,
+        [beg_time, end_time],
+        inclusive=inclusive,
+        prefix=prefix,
+        dirname=input_dir,
+        time_fmt=time_fmt,
+    )
+ 
+    if verbose:
+        print("[loadWRFDataFromDir] Going to load files: ")
+        for i, fname in enumerate(fnames):
+            print("[%d] %s" % (i, fname,))
     
-    fnames = listWRFOutputFiles(input_dir, prefix=prefix, append_dirname=True, time_rng=load_time_rng)
-   
+ 
+    # Check if all file exists
+    missing_files = missingFiles(fnames)
+    if len(missing_files) != 0:
+        print("Error: some files do not exist.")
+        for i, missing_file in enumerate(missing_files):
+            print("Missing file %d : %s" % (i, missing_file,))
+
+        raise Exception("Some files do not exist.")
+ 
     # Do a test to see if file contain 'time' (values) or 'Times' (String)
     test_ds = xr.open_dataset(fnames[0], decode_times=False, engine=engine)
   
-
     if 'time' in test_ds:
         print(fnames)
         ds = xr.open_mfdataset(fnames, decode_times=True, engine=engine, concat_dim=["time"], combine='nested')
  
     else:
         ds = xr.open_mfdataset(fnames, decode_times=False, engine=engine, concat_dim=["Time"], combine='nested')
+
+        # ===== The following codes create a `time` coordinate with dtype = datetime64[ns] =====
 
         # pandas cannot handle 0001-01-01
         t = []
@@ -145,22 +250,29 @@ def loadWRFDataFromDir(input_dir, prefix="wrfout_d01_", time_rng=None, extend_ti
         ).rename('time_tmp').rename({"Time":'time'})
    
         ds = ds.rename_dims({"Time":'time'})
-         
         ds = xr.merge([ds, ts]).rename({'time_tmp':'time'})
+        ds = ds.set_coords("time")
 
+        # ===== END =====
 
+    # Select time
+    ds_dts = ds.time.to_numpy()
+    select_dts = pd.date_range(
+        start     = beg_time, 
+        end       = end_time,
+        freq      = wsm.data_interval,
+        inclusive = inclusive,
+    )
 
-    if time_rng is not None:
-        # Find the range
-        t = ds.time.to_numpy()
-        flags = (t >= time_rng[0]) & (t < time_rng[1])
-        i0 = findfirst(flags)
-        i1 = findlast(flags)
-
-        print("selected index: [%d, %d]" % (i0, i1))
-
-        ds = ds.isel(time=slice(i0, i1+1))
-   
+    start_select = findfirst(ds_dts == beg_time)
+    if start_select == -1:
+        raise Exception("Error: Cannot find the matching `beg_time` = %s" % (str(beg_time),))
+        
+    for i, select_dt in enumerate(select_dts):
+        if ds_dts[start_select + i] != select_dt:
+            raise Exception("Error: Cannot find the matching `time` = %s" % (str(select_dt),))
+            
+    ds = ds.isel( time = slice(start_select, start_select + len(select_dts) ) )
  
     if verbose:
         print("Loaded time: ")
