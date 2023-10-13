@@ -1,9 +1,9 @@
  &time_control
- run_days                            = 5,
+ run_days                            = 2,
  run_hours                           = 0,
  run_minutes                         = 0,
  run_seconds                         = 0,
- start_year                          = 2001, 0001, 0001,
+ start_year                          = 0001, 0001, 0001,
  start_month                         = 01,   01,   01,
  start_day                           = 01,   01,   01,
  start_hour                          = 00,   00,   00,
@@ -15,16 +15,14 @@
  end_hour                            = 00,   00,   00,
  end_minute                          = 00,  120,  120,
  end_second                          = 00,   00,   00,
- history_interval                    =  1,   10,   10,
- frames_per_outfile                  = 60, 1000, 1000,
+ history_interval                    = 5,    10,   10,
+ frames_per_outfile                  = 1000, 1000, 1000,
  restart                             = .false.,
  restart_interval                    = 360,
  io_form_history                     = 2
  io_form_restart                     = 2
  io_form_input                       = 2
  io_form_boundary                    = 2
- iofields_filename = "WRFIO",
- ignore_iofields_warning = .true.,
  /
 
  &domains

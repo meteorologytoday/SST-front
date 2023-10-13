@@ -44,13 +44,6 @@ bl_scheme_mapping = dict(
     MYNN3 = 6,
 )
 
-# option: no_mp_heating
-mp_heating_mapping = dict(
-    on  = 0,
-    off = 1,
-)
-
-
 
 f0    = 1e-4
 T0    = 273.15 + 15.0
@@ -58,8 +51,7 @@ dTs    = np.linspace(1.0, -1.0, 9)
 wids   = np.array([50,]) * 1e3
 wpkts  = np.array([1, 2, 5])
 bl_scheme = ["YSU", "MYNN3"]
-mp_heating = ["on", "off"]
-ML = ["wML", "woML", "wMLweakstrat"]
+ML = ["wML", "woML"]#, "wMLweakstrat"]
 
 
 begin_X = 500e3
@@ -85,19 +77,17 @@ for i, dT in enumerate(dTs):
         for k, wpkt in enumerate(wpkts):
             for l, _ML in enumerate(ML):
                 for m, _bl_scheme in enumerate(bl_scheme):
-                    for n, _mp_heating in enumerate(mp_heating):
-                        sim_cases.append({
-                            'casename' : "case_mph-%s_dT%03d_wid%03d_%s_%s_wpkt%02d" % (_mp_heating, dT*1e2, wid/1e3, _ML, _bl_scheme, wpkt),
-                            'begin_X'    : begin_X,
-                            'T0'         : T0,
-                            'dT'         : dT,
-                            'wid'        : wid,
-                            'f0'         : f0,
-                            'ML'         : _ML,
-                            'bl_scheme'  : _bl_scheme,
-                            'mp_heating' : _mp_heating,
-                            'wpkt' : int(wpkt),
-                        })
+                    sim_cases.append({
+                        'casename' : "case_dT%03d_wid%03d_%s_%s_wpkt%02d" % (dT*1e2, wid/1e3, _ML, _bl_scheme, wpkt),
+                        'begin_X'    : begin_X,
+                        'T0'         : T0,
+                        'dT'         : dT,
+                        'wid'        : wid,
+                        'f0'         : f0,
+                        'ML'         : _ML,
+                        'bl_scheme'  : _bl_scheme,
+                        'wpkt' : int(wpkt),
+                    })
 
 with open("run_all_gaussian.sh", "w") as f_runall:
 
@@ -139,7 +129,7 @@ with open("run_all_gaussian.sh", "w") as f_runall:
             pleaseRun("cp tools/* %s/" % (case_folder,))
             pleaseRun("cp %s %s/namelist_unmodified.input" % (ref_namelist, case_folder,))
 
-            pleaseRun("f90nml -p -g physics -v bl_pbl_physics=%d -v no_mp_heating=%d %s/namelist_unmodified.input > %s/namelist.input" % (bl_scheme_mapping[sim_case['bl_scheme']], mp_heating_mapping[sim_case['mp_heating']], case_folder, case_folder))
+            pleaseRun("f90nml -p -g physics -v bl_pbl_physics=%d %s/namelist_unmodified.input > %s/namelist.input" % (bl_scheme_mapping[sim_case['bl_scheme']], case_folder, case_folder))
 
             # Write settings
             with open('%s/run_setting.json' % (case_folder,), 'w', encoding='utf-8') as f:
