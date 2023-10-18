@@ -1,6 +1,6 @@
 #!/bin/bash
 
-fig_dir=figures_exp02_compare_ML_and_bl_scheme_mph-on
+fig_dir=figures_exp02_compare_ML_and_bl_scheme_mph-off
 
 input_dirs=""
 exp_names=""
@@ -23,9 +23,9 @@ input_dirs=""
 for dT in -100 -75 -50 -25 000 025 050 075 100 ; do
     for wid in 050 ; do
         for MLsetup in woML ; do
-            for MLscheme in MYNN ; do 
+            for MLscheme in MYNN3 ; do 
                 for wpkt in 01 ; do
-                    input_dirs="$input_dirs $input_dir_root/case_mph-on_dT${dT}_wid${wid}_${MLsetup}_${MLscheme}_wpkt${wpkt}"
+                    input_dirs="$input_dirs $input_dir_root/case_mph-off_dT${dT}_wid${wid}_${MLsetup}_${MLscheme}_wpkt${wpkt}"
                     exp_names="$exp_names $dT"
                 done
             done
@@ -36,7 +36,7 @@ done
 
 output_dir=$fig_dir
 mkdir -p $output_dir
-N=8
+N=1
 
 for i in $( seq 0 7 ); do
     
@@ -48,12 +48,14 @@ for i in $( seq 0 7 ); do
 
     python3 plot_comparison_total_flux.py  \
         --input-dirs $input_dirs  \
-        --exp-beg-time "0001-01-01 00:00:00" \
+        --exp-beg-time "2001-01-01 00:00:00" \
         --time-rng $hrs_beg $hrs_end \
         --x-rng 400 800        \
         --HFX-rng 10 70        \
         --LH-rng 40 80        \
         --exp-names $exp_names \
+        --wrfout-data-interval 60 \
+        --frames-per-wrfout-file 60 \
         --no-display           \
         --output $output_name  &
 
