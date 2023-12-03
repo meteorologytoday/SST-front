@@ -6,7 +6,7 @@ N=10
 target_file=wrfout_d01_2001-01-04_23:00:00
 for run_dir in $( ls lab_gaussian ) ; do
 
-    if ! [[ "$run_dir" =~ MYNN3 ]] ; then
+    if ! [[ "$run_dir" =~ YSU ]] ; then
         echo "Skip $run_dir "
         continue
     fi
@@ -26,6 +26,12 @@ for run_dir in $( ls lab_gaussian ) ; do
         continue
     fi
 
+    if ! [[ "$run_dir" =~ dT100 ]] ; then
+        echo "Skip $run_dir "
+        continue
+    fi
+
+
 
 
 
@@ -37,7 +43,7 @@ for run_dir in $( ls lab_gaussian ) ; do
     else
         ((i=i%N)); ((i++==0)) && wait       
         echo "Run: $run_dir" 
-        #( echo "Running case $run_dir " ; cd $full_run_dir ; bash ./run_gaussian.sh ) & 
+        ( echo "Running case $run_dir " ; cd $full_run_dir ; bash ./run_gaussian.sh ) & 
     fi
 done
 

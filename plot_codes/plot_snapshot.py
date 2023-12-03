@@ -16,8 +16,14 @@ parser.add_argument('--blh-method', type=str, help='Method to determine boundary
 parser.add_argument('--SST-rng', type=float, nargs=2, help='Title', default=[14.5, 16.5])
 parser.add_argument('--no-display', action="store_true")
 parser.add_argument('--plot-check', action="store_true")
-parser.add_argument('--exp-beg-time', type=str, help='Title', required=True)
 parser.add_argument('--time-rng', type=int, nargs=2, help="Time range in hours after --exp-beg-time", required=True)
+parser.add_argument('--exp-beg-time', type=str, help='analysis beg time', required=True)
+parser.add_argument('--wrfout-data-interval', type=int, help='Time interval between each adjacent record in wrfout files in seconds.', required=True)
+parser.add_argument('--frames-per-wrfout-file', type=int, help='Number of frames in each wrfout file.', required=True)
+parser.add_argument('--z-rng', type=float, nargs=2, help='The plotted height rng in meters.', default=[0, 1200.0])
+parser.add_argument('--x-rng', type=float, nargs=2, help='The plotted height rng in kilometers', default=[None, None])
+parser.add_argument('--U10-rng', type=float, nargs=2, help='The plotted surface wind in m/s', default=[None, None])
+
 args = parser.parse_args()
 
 print(args)
@@ -27,14 +33,35 @@ Ri_c = dict(
     grad = 0.25,
 )
 
-time_beg = np.datetime64(args.exp_beg_time, 's') + np.timedelta64(args.time_rng[0], "h")
-time_end = np.datetime64(args.exp_beg_time, 's') + np.timedelta64(args.time_rng[1], "h")
+exp_beg_time = pd.Timestamp(args.exp_beg_time)
+wrfout_data_interval = pd.Timedelta(seconds=args.wrfout_data_interval)
+
+time_beg = exp_beg_time + pd.Timedelta(minutes=args.time_rng[0])
+time_end = exp_beg_time + pd.Timedelta(minutes=args.time_rng[1])
 
 
 
 # Loading data
 print("Loading wrf dir: %s" % (args.input_dir,))
-ds = wrf_load_helper.loadWRFDataFromDir(args.input_dir, prefix="wrfout_d01_", avg=False, time_rng=[time_beg, time_end])
+
+wsm = wrf_load_helper.WRFSimMetadata(
+    start_datetime  = exp_beg_time,
+    data_interval   = wrfout_data_interval,
+    frames_per_file = args.frames_per_wrfout_file,
+)
+
+
+ds = wrf_load_helper.loadWRFDataFromDir(
+    wsm, 
+    args.input_dir,
+    beg_time = time_beg,
+    end_time = time_end,
+    prefix="wrfout_d01_",
+    avg=False,
+    verbose=False,
+    inclusive="both",
+)
+
 ds = ds.mean(dim=['time', 'south_north', 'south_north_stag'], keep_attrs=True)
 print("Done")
 
@@ -54,10 +81,13 @@ P_total = ds.P + ds.PB
 P_sfc = P_total.isel(bottom_top=3)
 dP_sfcdx = - (P_sfc[1:] - P_sfc[:-1]) / ds.DX
 
-
+zerodegC = 273.15
 theta = ds.T + 300.0
 zeta = (ds.V[:, 1:] - ds.V[:, :-1]) / ds.DX
-SST = ds.TSK - 273.15
+SST = ds.TSK - zerodegC
+
+delta = ds.TH2 - ds.TSK
+
 
 """
 print("Compute boundary layer height")
@@ -123,7 +153,7 @@ if args.plot_check:
     )
 
 
-    fig, ax = plt.subplots(1, 6, figsize=(12, 6), sharey=True)
+    fig, ax = plt.subplots(1, 7, figsize=(14, 6), sharey=True)
 
 
     ax[0].plot(U,  Z_T[:, loc], label="U")
@@ -161,16 +191,16 @@ if args.plot_check:
     plt.show(block=False)
 
 fig, ax = plt.subplots(
-    6, 1,
-    figsize=(8, 16),
+    3, 1,
+    figsize=(8, 9),
     subplot_kw=dict(aspect="auto"),
-    gridspec_kw=dict(height_ratios=[1, 1, 1, 0.2, 0.2, 0.2], right=0.8),
+    gridspec_kw=dict(height_ratios=[1, 1, 1], right=0.8),
     constrained_layout=False,
     sharex=True,
 )
 
 time_fmt="%y/%m/%d %Hh"
-fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.astype(datetime.datetime).strftime(time_fmt), time_end.astype(datetime.datetime).strftime(time_fmt)))
+fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.strftime(time_fmt), time_end.strftime(time_fmt)))
 
 
 u_levs = np.linspace(4, 18, 15)
@@ -186,81 +216,51 @@ cax = tool_fig_config.addAxesNextToAxes(fig, ax[0], "right", thickness=0.03, spa
 cbar1 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
 
 
-U = (ds.U[:, :-1] + ds.U[:, 1:]) / 2
-mappable1 = ax[1].contourf(X_T, Z_T, U, levels=u_levs, cmap="Spectral_r", extend="both")
-cs = ax[1].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
-plt.clabel(cs)
-cax = tool_fig_config.addAxesNextToAxes(fig, ax[1], "right", thickness=0.03, spacing=0.05)
-cbar1 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
 
+U10_mean = np.mean(ds.U10)
+V10_mean = np.mean(ds.V10)
+ax[1].plot(X_sT, ds.U10 - U10_mean, color="black", label="$U_{\\mathrm{10m}} - \\overline{U}_{\\mathrm{10m}}$")
+ax[1].plot(X_sT, ds.V10 - V10_mean, color="red",   label="$V_{\\mathrm{10m}} - \\overline{V}_{\\mathrm{10m}}$")
 
-mappable1 = ax[2].contourf(X_T, Z_T, ds.V, levels=v_levs, cmap="Spectral_r", extend="both")
-cs = ax[2].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
-plt.clabel(cs)
-cax = tool_fig_config.addAxesNextToAxes(fig, ax[2], "right", thickness=0.03, spacing=0.05)
-cbar1 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
 
 
 for method in args.blh_method:
     blh = bl[method]['blh']
     color = dict(grad="lime", bulk="magenta")[method]
-    for _ax in ax[0:3].flatten():
+    for _ax in ax[0:1].flatten():
         _ax.scatter(blh[:, 0], blh[:, 1], s=2, c=color)
         
         _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
 
 
-for _ax in ax[0:3].flatten():
+for _ax in ax[0:1].flatten():
     _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
 
 
 # SST
-ax[3].plot(X_sT, SST, 'k-')
-
-# Other information
-ax[4].plot(X_sT, P_sfc / 1e2, 'b-')
-
-ax_dPdx = ax[4].twinx()
-ax_dPdx.plot(X_sU[1:-1], dP_sfcdx / 1e2 * 1e3, 'r--')
-
-ax_zeta = ax[5].twinx()
-ax[5].plot(X_sT, ds.V.isel(bottom_top=2), 'b-')
-ax_zeta.plot(X_sU[1:-1], zeta.isel(bottom_top=2), 'r--')
-
-for _ax, color, side in zip([ax[4], ax_dPdx], ['blue', 'red',], ['left', 'right',]):
-    _ax.tick_params(color=color, labelcolor=color, axis='y')
-    _ax.spines[side].set_color(color)
-
-for _ax, color, side in zip([ax[5], ax_zeta], ['blue', 'red',], ['left', 'right',]):
-    _ax.tick_params(color=color, labelcolor=color, axis='y')
-    _ax.spines[side].set_color(color)
+ax[2].plot(X_sT, SST, color='blue')
+ax[2].plot(X_sT, ds.T2 - zerodegC, color='red')
 
 
 ax[0].set_title("W [$\\mathrm{cm} / \\mathrm{s}$]")
-ax[1].set_title("U [$\\mathrm{m} / \\mathrm{s}$]")
-ax[2].set_title("V [$\\mathrm{m} / \\mathrm{s}$]")
+ax[1].set_title("$\\left( \\overline{U}_{\\mathrm{10m}}, \\overline{V}_{\\mathrm{10m}}\\right) = \\left( %.2f, %.2f \\right)$" % (U10_mean, V10_mean,))
+ax[1].legend()
+ax[2].legend()
+#ax[1].set_title("U [$\\mathrm{m} / \\mathrm{s}$]")
+#ax[2].set_title("V [$\\mathrm{m} / \\mathrm{s}$]")
 
-for _ax in ax[0:3].flatten():
-    _ax.set_ylim([0, 5000])
+for _ax in ax[0:1].flatten():
+    _ax.set_ylim(args.z_rng)
     _ax.set_ylabel("z [ m ]")
 
-
-ax[3].set_ylim(args.SST_rng)
-
-ax[0].set_xlim([0, 2000])
-
-
-ax[3].set_ylabel("SST [ ${}^\\circ\\mathrm{C}$ ]")
-ax[4].set_ylabel("$ P_\\mathrm{sfc} $ [ $\\mathrm{hPa}$ ]", color="blue")
-ax[5].set_ylabel("$ v_\\mathrm{sfc} $ [ $ \\mathrm{m} / \\mathrm{s}$ ]", color="blue")
-ax_zeta.set_ylabel("$ \\zeta_\\mathrm{sfc} $ [ $\\mathrm{s}^{-1}$ ]", color="red")
-ax_dPdx.set_ylabel("$ - \\partial P_\\mathrm{sfc} / \\partial x$ [ $ \\mathrm{hPa} / \\mathrm{km}$ ]", color="red")
-
-#cbar1.ax.set_label("[$\\times 10^{-2} \\, \\mathrm{m} / \\mathrm{s}$]")
+ax[1].set_ylim(args.U10_rng)
+ax[1].set_ylabel("[ $ \\mathrm{m} / \\mathrm{s}$ ]", color="black")
+ax[2].set_ylabel("[ $ \\mathrm{K}$ ]", color="black")
 
 for _ax in ax.flatten():
     _ax.grid()
     _ax.set_xlabel("[km]")
+    _ax.set_xlim(np.array(args.x_rng))
 
 
 if args.output != "":

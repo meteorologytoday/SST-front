@@ -5,16 +5,22 @@ import argparse
 import load_helper
 import tool_fig_config
 import diagnostics
+import datetime
+import wrf_load_helper 
 
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--wrfout', type=str, help='Input directory.', required=True)
+parser.add_argument('--input-dir', type=str, help='Input directory.', required=True)
 parser.add_argument('--output', type=str, help='Output filename in png.', default="")
-parser.add_argument('--title', type=str, help='Title', default="")
-parser.add_argument('--blh-method', type=str, help='Method to determine boundary layer height', default=["grad", "bulk"], nargs='+', choices=['bulk', 'grad'])
+parser.add_argument('--extra-title', type=str, help='Title', default="")
+parser.add_argument('--blh-method', type=str, help='Method to determine boundary layer height', default=[], nargs='+', choices=['bulk', 'grad'])
 parser.add_argument('--SST-rng', type=float, nargs=2, help='Title', default=[14.5, 16.5])
 parser.add_argument('--no-display', action="store_true")
 parser.add_argument('--plot-check', action="store_true")
-parser.add_argument('--time-idx', type=int, nargs=2, required=True)
+parser.add_argument('--time-rng', type=int, nargs=2, help="Time range in hours after --exp-beg-time", required=True)
+parser.add_argument('--exp-beg-time', type=str, help='analysis beg time', required=True)
+parser.add_argument('--wrfout-data-interval', type=int, help='Time interval between each adjacent record in wrfout files in seconds.', required=True)
+parser.add_argument('--frames-per-wrfout-file', type=int, help='Number of frames in each wrfout file.', required=True)
+
 args = parser.parse_args()
 
 print(args)
@@ -24,14 +30,37 @@ Ri_c = dict(
     grad = 0.25,
 )
 
+exp_beg_time = pd.Timestamp(args.exp_beg_time)
+wrfout_data_interval = pd.Timedelta(seconds=args.wrfout_data_interval)
+
+time_beg = exp_beg_time + pd.Timedelta(minutes=args.time_rng[0])
+time_end = exp_beg_time + pd.Timedelta(minutes=args.time_rng[1])
+
+
 
 # Loading data
-print("Loading file: %s" % (args.wrfout,))
-ds = load_helper.loadWRFData(args.wrfout)
+print("Loading wrf dir: %s" % (args.input_dir,))
+
+wsm = wrf_load_helper.WRFSimMetadata(
+    start_datetime  = exp_beg_time,
+    data_interval   = wrfout_data_interval,
+    frames_per_file = args.frames_per_wrfout_file,
+)
+
+
+ds = wrf_load_helper.loadWRFDataFromDir(
+    wsm, 
+    args.input_dir,
+    beg_time = time_beg,
+    end_time = time_end,
+    prefix="wrfout_d01_",
+    avg=False,
+    verbose=False,
+    inclusive="both",
+)
+
+ds = ds.mean(dim=['time', 'south_north', 'south_north_stag'], keep_attrs=True)
 print("Done")
-
-
-ds = ds.isel(time=slice(args.time_idx[0], args.time_idx[1]+1)).mean(dim=['time', 'south_north', 'south_north_stag'], keep_attrs=True)
 
 Nx = ds.dims['west_east']
 Nz = ds.dims['bottom_top']
@@ -47,17 +76,16 @@ Z_T = (Z_W[1:, :] + Z_W[:-1, :]) / 2
 P_total = ds.P + ds.PB
 
 P_sfc = P_total.isel(bottom_top=3)
-dP_sfcdx = (P_sfc[1:] - P_sfc[:-1]) / ds.DX
+dP_sfcdx = - (P_sfc[1:] - P_sfc[:-1]) / ds.DX
 
 
 theta = ds.T + 300.0
 zeta = (ds.V[:, 1:] - ds.V[:, :-1]) / ds.DX
 SST = ds.TSK - 273.15
 
-
+"""
 print("Compute boundary layer height")
 bl = dict()
-
 
 for method in args.blh_method:
    
@@ -91,6 +119,7 @@ for method in args.blh_method:
         blh = _blh,
         Ri  = _Ri,
     )
+"""
 
 print("Loading matplotlib...")
 import matplotlib
@@ -118,7 +147,7 @@ if args.plot_check:
     )
 
 
-    fig, ax = plt.subplots(1, 6, figsize=(12, 6), sharey=True)
+    fig, ax = plt.subplots(1, 7, figsize=(14, 6), sharey=True)
 
 
     ax[0].plot(U,  Z_T[:, loc], label="U")
@@ -156,18 +185,16 @@ if args.plot_check:
     plt.show(block=False)
 
 fig, ax = plt.subplots(
-    6, 1,
-    figsize=(8, 16),
+    7, 1,
+    figsize=(8, 18),
     subplot_kw=dict(aspect="auto"),
-    gridspec_kw=dict(height_ratios=[1, 1, 1, 0.2, 0.2, 0.2], right=0.8),
+    gridspec_kw=dict(height_ratios=[1, 1, 1, 0.2, 0.2, 0.2, 0.2], right=0.8),
     constrained_layout=False,
     sharex=True,
 )
 
-if args.title == "":
-    fig.suptitle(args.wrfout)
-else:
-    fig.suptitle(args.title)
+time_fmt="%y/%m/%d %Hh"
+fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.strftime(time_fmt), time_end.strftime(time_fmt)))
 
 
 u_levs = np.linspace(4, 18, 15)
@@ -207,6 +234,10 @@ for method in args.blh_method:
         _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
 
 
+for _ax in ax[0:3].flatten():
+    _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
+
+
 # SST
 ax[3].plot(X_sT, SST, 'k-')
 
@@ -229,6 +260,12 @@ for _ax, color, side in zip([ax[5], ax_zeta], ['blue', 'red',], ['left', 'right'
     _ax.spines[side].set_color(color)
 
 
+
+ax[6].plot(X_sU, ds.U.isel(bottom_top=0), 'r-', label="z=0")
+ax[6].plot(X_sU, ds.U.isel(bottom_top=1), 'g-',  label="z=1")
+ax[6].plot(X_sU, ds.U.isel(bottom_top=2), 'b-',  label="z=2")
+
+
 ax[0].set_title("W [$\\mathrm{cm} / \\mathrm{s}$]")
 ax[1].set_title("U [$\\mathrm{m} / \\mathrm{s}$]")
 ax[2].set_title("V [$\\mathrm{m} / \\mathrm{s}$]")
@@ -247,8 +284,12 @@ ax[3].set_ylabel("SST [ ${}^\\circ\\mathrm{C}$ ]")
 ax[4].set_ylabel("$ P_\\mathrm{sfc} $ [ $\\mathrm{hPa}$ ]", color="blue")
 ax[5].set_ylabel("$ v_\\mathrm{sfc} $ [ $ \\mathrm{m} / \\mathrm{s}$ ]", color="blue")
 ax_zeta.set_ylabel("$ \\zeta_\\mathrm{sfc} $ [ $\\mathrm{s}^{-1}$ ]", color="red")
-ax_dPdx.set_ylabel("$\\partial P_\\mathrm{sfc} / \\partial x$ [ $ \\mathrm{hPa} / \\mathrm{km}$ ]", color="red")
+ax_dPdx.set_ylabel("$ - \\partial P_\\mathrm{sfc} / \\partial x$ [ $ \\mathrm{hPa} / \\mathrm{km}$ ]", color="red")
 
+ax[6].set_ylabel("$ u_\\mathrm{sfc} $ [ $ \\mathrm{m} / \\mathrm{s}$ ]", color="black")
+
+
+ax[6].legend()
 #cbar1.ax.set_label("[$\\times 10^{-2} \\, \\mathrm{m} / \\mathrm{s}$]")
 
 for _ax in ax.flatten():

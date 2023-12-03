@@ -13,6 +13,8 @@ parser.add_argument('--output', type=str, help='Output filename in png.', defaul
 parser.add_argument('--title', type=str, help='Title', default="")
 parser.add_argument('--exp-names', type=str, nargs="+", help='Title', default=None)
 parser.add_argument('--exp-beg-time', type=str, help='Title', required=True)
+parser.add_argument('--wrfout-data-interval', type=int, help='Time interval between each adjacent record in wrfout files in seconds.', required=True)
+parser.add_argument('--frames-per-wrfout-file', type=int, help='Number of frames in each wrfout file.', required=True)
 parser.add_argument('--time-rng', type=int, nargs=2, help="Time range in hours after --exp-beg-time", required=True)
 parser.add_argument('--blh-method', type=str, help='Method to determine boundary layer height', default=["grad", "bulk"], nargs='+', choices=['bulk', 'grad'])
 parser.add_argument('--SST-rng', type=float, nargs=2, help='Title', default=[14.5, 16.5])
@@ -42,17 +44,23 @@ data = []
 print("Start loading data.")
 for i, input_dir in enumerate(args.input_dirs):
     print("Loading directory: %s" % (input_dir,))
-    ds = wrf_load_helper.loadWRFDataFromDir(input_dir, prefix="wrfout_d01_", avg=False, time_rng=[time_beg, time_end])
+    
+    wsm = wrf_load_helper.WRFSimMetadata(
+        start_datetime = exp_beg_time,
+        data_interval = data_interval,
+        frames_per_file = args.frames_per_wrfout_file,
+    )
 
-    #t = ds.coords['time']
-    #print(t.to_numpy())
-    #t_idxs = wrf_load_helper.findArgRange(t, time_beg, time_end, inclusive="left")
-    #print(t_idxs)
-    #ds = ds.sel(time=slice(*wrf_load_helper.findArgRange(t, time_beg, time_end, inclusive="left")))
-
-    #ds = ds.where( (ds.time >= time_beg) & (ds.time < time_end))
-
-    #time_rng = ds.time.isel(time=[1, -1])
+    ds = wrf_load_helper.loadWRFDataFromDir(
+        wsm, 
+        input_dir,
+        beg_time = time_beg,
+        end_time = time_end,
+        prefix="wrfout_d01_",
+        avg=False,
+        verbose=False,
+        inclusive="both",
+    )
 
     ds = ds.mean(dim=['time', 'south_north', 'south_north_stag'], keep_attrs=True)
 

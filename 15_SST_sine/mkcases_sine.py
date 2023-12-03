@@ -8,7 +8,7 @@ def pleaseRun(cmd):
     print(">> ", cmd)
     os.system(cmd)
 
-lab_name = "lab_gaussian"
+lab_name = "lab_sine"
 
 ref_WRF_root = "/home/t2hsu/projects/WRF_frontcases/01_various_SST_front_wavelength/WRF-4.3.3_em_quarter_ss"
 ref_namelist = "namelist.input"
@@ -56,14 +56,11 @@ mp_heating_mapping = dict(
 f0    = 1e-4
 T0    = 273.15 + 15.0
 dTs    = np.linspace(1.0, -1.0, 9)
-wids   = np.array([50,]) * 1e3
-wpkts  = np.array([1, 2, 5])
+wnms = np.array([6,])
 bl_scheme = ["MYNN25", "YSU"]
 mp_heating = ["on", "off"]
-ML = ["wML", "woML", "wMLweakstrat"]
+ML = ["woML",]
 
-
-begin_X = 500e3
 
 # parallelization
 parallel_N = 4
@@ -82,25 +79,22 @@ Ny = nml['domains']['e_sn'][0] - 1
 
 # Setup cases configuration
 for i, dT in enumerate(dTs):
-    for j, wid in enumerate(wids):
-        for k, wpkt in enumerate(wpkts):
-            for l, _ML in enumerate(ML):
-                for m, _bl_scheme in enumerate(bl_scheme):
-                    for n, _mp_heating in enumerate(mp_heating):
-                        sim_cases.append({
-                            'casename' : "case_mph-%s_dT%03d_wid%03d_%s_%s_wpkt%02d" % (_mp_heating, dT*1e2, wid/1e3, _ML, _bl_scheme, wpkt),
-                            'begin_X'    : begin_X,
-                            'T0'         : T0,
-                            'dT'         : dT,
-                            'wid'        : wid,
-                            'f0'         : f0,
-                            'ML'         : _ML,
-                            'bl_scheme'  : _bl_scheme,
-                            'mp_heating' : _mp_heating,
-                            'wpkt' : int(wpkt),
-                        })
+    for k, wnm in enumerate(wnms):
+        for l, _ML in enumerate(ML):
+            for m, _bl_scheme in enumerate(bl_scheme):
+                for n, _mp_heating in enumerate(mp_heating):
+                    sim_cases.append({
+                        'casename' : "case_mph-%s_dT%03d_wnm%02d_%s_%s" % (_mp_heating, dT*1e2, wnm, _ML, _bl_scheme),
+                        'T0'         : T0,
+                        'dT'         : dT,
+                        'f0'         : f0,
+                        'ML'         : _ML,
+                        'bl_scheme'  : _bl_scheme,
+                        'mp_heating' : _mp_heating,
+                        'wpkt'       : int(wnm),
+                    })
 
-with open("run_all_gaussian.sh", "w") as f_runall:
+with open("run_all_sine.sh", "w") as f_runall:
 
     f_runall.write("#!/bin/bash\n")
     f_runall.write("trap 'kill $( jobs -p )' EXIT\n")
@@ -115,7 +109,7 @@ with open("run_all_gaussian.sh", "w") as f_runall:
         #pleaseRun("rm -rf %s" % (case_folder,) )
 
 
-        f_runall.write("( echo \"Running case %s \" ; cd %s ; bash ./run_gaussian.sh ) & \n" % (sim_case["casename"], case_folder, ))
+        f_runall.write("( echo \"Running case %s \" ; cd %s ; bash ./run_sine.sh ) & \n" % (sim_case["casename"], case_folder, ))
         
         if i > 0 and i % parallel_N == 0:
             f_runall.write("wait\n")

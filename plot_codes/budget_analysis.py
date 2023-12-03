@@ -32,10 +32,10 @@ args = parser.parse_args()
 print(args)
 
 exp_beg_time = pd.Timestamp(args.exp_beg_time)
+wrfout_data_interval = pd.Timedelta(seconds=args.wrfout_data_interval)
 
 time_beg = exp_beg_time + pd.Timedelta(minutes=args.time_rng[0])
 time_end = exp_beg_time + pd.Timedelta(minutes=args.time_rng[1])
-wrfout_data_interval = pd.Timedelta(seconds=args.wrfout_data_interval)
 
 wsm = wrf_load_helper.WRFSimMetadata(
     start_datetime  = exp_beg_time,
@@ -226,6 +226,55 @@ def computeBudget(dt, output_filename):
         Umom_res = dUdt_da + UdUdX_da + WdUdZ_da - fV_da + dPdX_da / RHO[1:2, :, :] - RNLDSTRS_da
         Umom_res = Umom_res.rename("Umom_res")
         merge_data.append(Umom_res)
+
+
+
+        # ============= Thermal =============
+
+        # Compute Ududx
+        dTdX_U = np.zeros_like(U_U)
+        dUdX_U[:, :, 1:-1] = (U_U[:, :, 2:] - U_U[:, :, :-2]) / (2*dX)
+        dUdX_U[:, :, 0]  = dUdX_U[:, :, 1]
+        dUdX_U[:, :, -1] = dUdX_U[:, :, -2]
+
+        # old way
+        #UdUdX_T = U_T[1, :, :] * dUdX_T
+
+        # new way
+        UdUdX_U = U_U * dUdX_U
+        UdUdX_T = (UdUdX_U[:, :, 1:] + UdUdX_U[:, :, :-1]) / 2
+        UdUdX_da = da_empty.copy().rename("UdUdX_T")
+        UdUdX_da[:] = UdUdX_T[1, :, :]
+        merge_data.append(UdUdX_da)
+
+        # Compute dudz
+        dUdZ_T = (U_W[1, 1:, :] - U_W[1, :-1, :]) / dZ_T[1, :, :]
+        dUdZ_da = da_empty.copy().rename("dUdZ_T")
+        dUdZ_da[:] = dUdZ_T
+        merge_data.append(dUdZ_da)
+
+        # Compute wdudz
+        dUdZ_T = (U_U[1, :, 1:] - U_U[1, :, :-1]) / dZ_T[1, :, :]
+        WdUdZ_T = W_T[1, :, :] * dUdZ_T
+        WdUdZ_da = da_empty.copy().rename("WdUdZ_T")
+        WdUdZ_da[:] = WdUdZ_T
+        merge_data.append(WdUdZ_da)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         ds = xr.merge(merge_data)
         print("Output file: %s" % (output_filename,))

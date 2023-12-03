@@ -126,7 +126,7 @@ def genInclusiveBounds(beg_dt, end_dt, interval, inclusive):
     return _beg_dt, _end_dt
 
 
-def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_prefix, dirname=None, time_fmt=wrfout_time_fmt):
+def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_prefix, suffix="", dirname=None, time_fmt=wrfout_time_fmt):
    
     beg_dt, end_dt = genInclusiveBounds(time_rng[0], time_rng[1], wsm.data_interval, inclusive)
    
@@ -136,7 +136,7 @@ def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_pref
 
     dts = pd.date_range(start=firstfile_dt, end=lastfile_dt, freq=wsm.file_interval, inclusive="both")
     
-    fnames = [ "%s%s" % (prefix, dt.strftime(time_fmt),) for dt in dts ]
+    fnames = [ "%s%s%s" % (prefix, dt.strftime(time_fmt), suffix, ) for dt in dts ]
 
     if dirname is not None:
         for i in range(len(fnames)):
@@ -145,7 +145,7 @@ def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_pref
     return fnames
 
 
-def listWRFOutputFiles(dirname, prefix=wrfout_prefix, append_dirname=False, time_rng=None):
+def listWRFOutputFiles(dirname, prefix=wrfout_prefix, suffix="", append_dirname=False, time_rng=None):
 
     valid_files = []
     
@@ -188,7 +188,7 @@ def _loadWRFTimeOnly(filename):
     return t
 
 
-def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_prefix, time_fmt=wrfout_time_fmt, verbose=False, avg=False, inclusive="left"):
+def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_prefix, suffix="", time_fmt=wrfout_time_fmt, verbose=False, avg=False, inclusive="left", assign_coords=True):
     
     if end_time is None:
 
@@ -203,6 +203,7 @@ def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_pr
         [beg_time, end_time],
         inclusive=inclusive,
         prefix=prefix,
+        suffix=suffix,
         dirname=input_dir,
         time_fmt=time_fmt,
     )
@@ -287,10 +288,10 @@ def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_pr
         ds = ds.reset_coords(names=['XLAT', 'XLONG']).mean(dim="time", keep_attrs=True).expand_dims(dim={"time": ts[0:1]}, axis=0)
 
 
-    ds = ds.assign_coords(
-        XLAT=( ('time', 'south_north', 'west_east'), ds.XLAT.data), 
-        XLONG=( ('time', 'south_north', 'west_east'), ds.XLONG.data),
-    )
+        ds = ds.assign_coords(
+            XLAT=( ('time', 'south_north', 'west_east'), ds.XLAT.data), 
+            XLONG=( ('time', 'south_north', 'west_east'), ds.XLONG.data),
+        )
 
 
     return ds
