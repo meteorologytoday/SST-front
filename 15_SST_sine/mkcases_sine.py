@@ -55,8 +55,8 @@ mp_heating_mapping = dict(
 
 f0    = 1e-4
 T0    = 273.15 + 15.0
-dTs    = np.linspace(1.0, -1.0, 9)
-wnms = np.array([6,])
+dTs    = np.linspace(0, 1.0, 11)
+wnms = np.array([1,])
 bl_scheme = ["MYNN25", "YSU"]
 mp_heating = ["on", "off"]
 ML = ["woML",]
@@ -91,7 +91,7 @@ for i, dT in enumerate(dTs):
                         'ML'         : _ML,
                         'bl_scheme'  : _bl_scheme,
                         'mp_heating' : _mp_heating,
-                        'wpkt'       : int(wnm),
+                        'wnm'        : int(wnm),
                     })
 
 with open("run_all_sine.sh", "w") as f_runall:

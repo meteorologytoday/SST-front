@@ -24,9 +24,9 @@ wnm = setting['wnm']
 YC = ds.DY * ( np.arange(Ny) + 0.5 )
 XC = ds.DX * ( np.arange(Nx) + 0.5 )
 
-LX = ds.DX * NX
+LX = ds.DX * Nx
 
-TSK = T0 + dT * np.sin(2 * np.pi * XC / LX)
+TSK = T0 + dT * np.sin(2 * np.pi * XC * wnm / LX)
 for j in range(Ny):
     ds.TSK[0, j, :] = TSK
 
