@@ -102,7 +102,7 @@ def computeIndex(wsm, index_time=None, time_passed=None):
     return file_time, frame
 
 
-def genInclusiveBounds(beg_dt, end_dt, interval, inclusive):
+def genInclusiveBounds(wsm, beg_dt, end_dt, interval, inclusive):
 
     if inclusive == "left":
         _beg_dt = beg_dt
@@ -128,7 +128,7 @@ def genInclusiveBounds(beg_dt, end_dt, interval, inclusive):
 
 def genFilenameFromDateRange(wsm, time_rng, inclusive="left", prefix=wrfout_prefix, suffix="", dirname=None, time_fmt=wrfout_time_fmt):
    
-    beg_dt, end_dt = genInclusiveBounds(time_rng[0], time_rng[1], wsm.data_interval, inclusive)
+    beg_dt, end_dt = genInclusiveBounds(wsm, time_rng[0], time_rng[1], wsm.data_interval, inclusive)
    
      
     firstfile_dt, _ = computeIndex(wsm, index_time=beg_dt)
@@ -188,7 +188,7 @@ def _loadWRFTimeOnly(filename):
     return t
 
 
-def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_prefix, suffix="", time_fmt=wrfout_time_fmt, verbose=False, avg=False, inclusive="left", assign_coords=True):
+def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_prefix, suffix="", time_fmt=wrfout_time_fmt, verbose=False, avg=None, inclusive="left", assign_coords=True):
     
     if end_time is None:
 
@@ -280,13 +280,57 @@ def loadWRFDataFromDir(wsm, input_dir, beg_time, end_time=None, prefix=wrfout_pr
         for i, _t in enumerate(pd.DatetimeIndex(ds.time)):
             print("[%d] %s" % (i, _t.strftime("%Y-%m-%d %H:%M:%S")))
 
-    if avg:
+    if avg is not None:
+
         # Unset XLAT and XLONG as coordinate
         # For some reason they disappeared after taking the time mean
+        ds = ds.reset_coords(names=['XLAT', 'XLONG'])
+        
+        avg_all = avg == "ALL"
+
+        if avg_all: 
+            verbose and print("Averge ALL data")
+            ds = ds.mean(dim="time", keep_attrs=True).expand_dims(dim={"time": ts[0:1]}, axis=0)
+        
+        elif type(avg) == pd.Timedelta:
+
+            avg_N = avg / wsm.data_interval
+            if avg_N % 1 != 0:
+                raise Exception("Average time is not a multiple of wsm.data_interval.")
+            else:
+                avg_N = int(avg_N)
+        
+            groupped_time = np.zeros_like(ds.coords["time"])
+            number_of_groups = ds.dims["time"] / avg_N
+            if number_of_groups % 1 != 0:
+                print("Warning (loadWRFDataFromDir): There are %d of data will not be used to produce averge." % 
+                    (int(ds.dims["time"] - np.floor(number_of_groups)*avg_N),)
+                )
+
+            number_of_groups = int(np.floor(number_of_groups))
+
+            verbose and print("avg_N = %d, number_of_groups = %d" % (avg_N, number_of_groups))
+
+            for n in range(number_of_groups):
+                groupped_time[(n*avg_N):((n+1)*avg_N+1)] = ds.coords["time"][n*avg_N].to_numpy()
+
+            verbose and print(groupped_time)
+
+            groupped_time = xr.DataArray(
+                data=groupped_time,
+                dims=["time"],
+                coords=dict(time=ds.coords["time"])
+            ).rename("groupped_time")
+
+            ds = xr.merge([ds, groupped_time])
+            ds = ds.groupby("groupped_time", squeeze=False).mean(dim="time").rename({"groupped_time": "time"})
+
+
+        else:
+            raise Exception("If avg is not None or string 'ALL', it has to be a pandas.Timedelta object. Now type(avg) = `%s`" % str(type(avg),) )
+
+
         #ds = ds.reset_coords(names=['XLAT', 'XLONG']).mean(dim="time", keep_attrs=True).expand_dims(dim={"time": ts[0:1]}, axis=0)
-
-        ds = ds.reset_coords(names=['XLAT', 'XLONG']).mean(dim="time", keep_attrs=True).expand_dims(dim={"time": ts[0:1]}, axis=0)
-
 
         ds = ds.assign_coords(
             XLAT=( ('time', 'south_north', 'west_east'), ds.XLAT.data), 

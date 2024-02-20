@@ -132,7 +132,23 @@ for i, input_dir in enumerate(args.input_dirs):
     U_T[:, :] = (_tmp.isel(west_east_stag=slice(1, None)).to_numpy() + _tmp.isel(west_east_stag=slice(0, -1)).to_numpy()) / 2
     U_T = U_T.rename("U_T")
     merge_data.append(U_T) 
+ 
+    U_sfc = U_T.isel(bottom_top=0).to_numpy()
+    V_sfc = ds["V"].isel(bottom_top=0)
+    WND_sfc = (U_sfc**2 + V_sfc**2)**0.5
+    WND_sfc = WND_sfc.rename("WND_sfc")
+
+
+    C_H = ds["FLHC"] / WND_sfc
+    C_H = C_H.rename("C_H")
     
+    C_Q = ds["FLQC"] / WND_sfc
+    C_Q = C_Q.rename("C_Q")
+
+    merge_data.append(WND_sfc)
+    merge_data.append(C_H)
+    merge_data.append(C_Q)
+   
     ds = xr.merge(merge_data)
 
     ds = ds.where(
@@ -145,18 +161,15 @@ for i, input_dir in enumerate(args.input_dirs):
     #Ulev1 = ds["U_T"].isel(bottom_top=0).to_numpy()
     #Vlev1 = ds["V"].isel(bottom_top=0).to_numpy()
     
-    #WSPD1 = np.sqrt(Ulev1**2 + Vlev1**2)
 
-    #TOA    = (ds["TSK"] - ds["T2"]).rename("TAO")
-
-    HFX_approx = ds["FLHC"] * ds["TOA"]
+    HFX_approx = ds["C_H"] * ds["WND_sfc"] * ds["TOA"]
     HFX_approx = HFX_approx.rename("HFX_approx")
     
     #y_full[j]    = C_T * (_ds["WIND10TAO"].to_numpy() - ref_ds["WIND10TAO"].to_numpy())
     #y_dWIND10[j] = C_T * ((_ds["WIND10"].to_numpy() - ref_ds["WIND10"].to_numpy()) * ref_ds["TAO"].to_numpy())
     #y_dTAO[j]    = C_T * (ref_ds["WIND10"].to_numpy() * (_ds["TAO"].to_numpy() - ref_ds["TAO"].to_numpy() )) 
 
-    QFX_approx = ds["FLQC"] * ds["QOA"]
+    QFX_approx = ds["C_Q"] * ds["WND_sfc"] * ds["QOA"]
     _tmp = QFX_approx.to_numpy()
     _tmp[_tmp <= -0.02] = -0.02
     QFX_approx[:] = _tmp
@@ -164,28 +177,50 @@ for i, input_dir in enumerate(args.input_dirs):
     LH_approx = LH_approx.rename("LH_approx")
    
     ds = xr.merge([ds, HFX_approx, LH_approx])
-
-    FLHC_mean = ds["FLHC"].mean(dim="west_east").rename("FLHC_mean")
-    TOA_mean = ds["TOA"].mean(dim="west_east").rename("TOA_mean")
-    FLHCp = (ds["FLHC"] - FLHC_mean).rename("FLHCp")
-    TOAp  = (ds["TOA"]  - TOA_mean).rename("TOAp")
-    FLHCpTOAp_mean = (FLHCp * TOAp).mean(dim="west_east").rename("FLHCpTOAp_mean")
-
-    FLQC_mean = ds["FLQC"].mean(dim="west_east").rename("FLQC_mean")
-    QOA_mean = ds["QOA"].mean(dim="west_east").rename("QOA_mean")
-    FLQCp = (ds["FLQC"] - FLQC_mean).rename("FLQCp")
-    QOAp  = (ds["QOA"]  - QOA_mean).rename("QOAp")
-    FLQCpQOAp_mean = (FLQCp * QOAp).mean(dim="west_east").rename("FLQCpQOAp_mean")
     
+    WND_sfc_mean = ds["WND_sfc"].mean(dim="west_east").rename("WND_sfc_mean")
+
+    def horDecomp(da, name_m="mean", name_p="prime"):
+        m = da.mean(dim="west_east").rename(name_m)
+        p = (da - m).rename(name_p) 
+        return m, p
+
+    WND_m, WND_p = horDecomp(ds["WND_sfc"], "WND_m", "WND_p")
+    
+    C_H_m, C_H_p = horDecomp(ds["C_H"], "C_H_m", "C_H_p")
+    TOA_m, TOA_p = horDecomp(ds["TOA"], "TOA_m", "TOA_p")
+    
+    C_H_TOA_cx = (C_H_p * TOA_p).mean(dim="west_east").rename("C_H_TOA_cx")
+    C_H_WND_cx = (C_H_p * WND_p).mean(dim="west_east").rename("C_H_WND_cx")
+    WND_TOA_cx = (WND_p * TOA_p).mean(dim="west_east").rename("WND_TOA_cx")
+    C_H_WND_TOA_cx = (C_H_p * WND_p * TOA_p).mean(dim="west_east").rename("C_H_WND_TOA_cx")
+
+    C_Q_m, C_Q_p = horDecomp(ds["C_Q"], "C_Q_m", "C_Q_p")
+    QOA_m, QOA_p = horDecomp(ds["QOA"], "QOA_m", "QOA_p")
+
+    C_Q_QOA_cx = (C_Q_p * QOA_p).mean(dim="west_east").rename("C_Q_QOA_cx")
+    C_Q_WND_cx = (C_Q_p * WND_p).mean(dim="west_east").rename("C_Q_WND_cx")
+    WND_QOA_cx = (WND_p * QOA_p).mean(dim="west_east").rename("WND_QOA_cx")
+    C_Q_WND_QOA_cx = (C_Q_p * WND_p * QOA_p).mean(dim="west_east").rename("C_Q_WND_QOA_cx")
+
+
     ds = xr.merge([ds, 
 
-        FLHC_mean, TOA_mean,
-        FLHCp, TOAp,
-        FLHCpTOAp_mean,
+        WND_m, WND_p,
 
-        FLQC_mean, QOA_mean,
-        FLQCp, QOAp,
-        FLQCpQOAp_mean,
+        C_H_m, C_H_p,
+        TOA_m, TOA_p,
+        C_H_TOA_cx,
+        C_H_WND_cx,
+        WND_TOA_cx,
+        C_H_WND_TOA_cx,
+
+        C_Q_m, C_Q_p,
+        QOA_m, QOA_p,
+        C_Q_QOA_cx,
+        C_Q_WND_cx,
+        WND_QOA_cx,
+        C_Q_WND_QOA_cx,
 
     ])
 
@@ -212,51 +247,106 @@ if args.ref_exp_order is not None:
 
     x = np.zeros((len(args.input_dirs),))
 
-    y_HFX_full    = np.zeros_like(x)
-    y_HFX_dFLHC   = np.zeros_like(x)
-    y_HFX_dTOA    = np.zeros_like(x)
-    y_HFX_dcorr   = np.zeros_like(x)
-    y_HFX_res     = np.zeros_like(x)
-    y_HFX_ref     = ref_ds["HFX"].to_numpy()
+    y_HFX = { k : np.zeros_like(x) for k in [
+        "real", "full", "d(C_H)_WND_TOA", "C_H_dWND_TOA", "C_H_WND_dTOA",
+        "dWND_C_H_TOA_cx", "WND_d(C_H_TOA_cx)",
+        "dC_H_WND_TOA_cx", "C_H_d(WND_TOA_cx)",
+        "dTOA_C_H_WND_cx", "TOA_d(C_H_WND_cx)",
+        "d(C_H_WND_TOA_cx)",
+    ]}
+
+    y_LH = { k : np.zeros_like(x) for k in [
+        "real", "full", "d(C_Q)_WND_QOA", "C_Q_dWND_QOA", "C_Q_WND_dQOA",
+        "dWND_C_Q_QOA_cx", "WND_d(C_Q_QOA_cx)",
+        "dC_Q_WND_QOA_cx", "C_Q_d(WND_QOA_cx)",
+        "dQOA_C_Q_WND_cx", "QOA_d(C_Q_WND_cx)",
+        "d(C_Q_WND_QOA_cx)",
+    ]}
+
+    y_HFX["ref"] = ref_ds["HFX"].to_numpy()
+    y_LH["ref"]  = ref_ds["LH"].to_numpy()
+
+    ref_WND_m = ref_ds["WND_m"]
+    ref_C_H_m = ref_ds["C_H_m"]
+    ref_C_Q_m = ref_ds["C_Q_m"]
+    ref_TOA_m = ref_ds["TOA_m"]
+    ref_QOA_m = ref_ds["QOA_m"]
  
-    y_LH_full    = np.zeros_like(x)
-    y_LH_dFLQC   = np.zeros_like(x)
-    y_LH_dQOA    = np.zeros_like(x)
-    y_LH_dcorr   = np.zeros_like(x)
-    y_LH_res     = np.zeros_like(x)
-    y_LH_ref     = ref_ds["LH"].to_numpy()
-    
-    y_HFX = np.zeros_like(x)
-    y_LH  = np.zeros_like(x)
-
-
     print("Doing decomposition")
     for j, input_dir in enumerate(args.input_dirs):
        
         print("j => %d" % (j,)) 
         _ds = data[j]
 
-        print(_ds)
-        print(ref_ds)
+        y_HFX["real"][j] = _ds["HFX"] - ref_ds["HFX"]
 
-        y_HFX[j] = _ds["HFX"] - ref_ds["HFX"]
-        y_LH[j] = _ds["LH"] - ref_ds["LH"]
+        y_HFX["full"][j]     = _ds["HFX_approx"] - ref_ds["HFX_approx"]
+        y_HFX["d(C_H)_WND_TOA"][j]  = ( _ds["C_H_m"] - ref_ds["C_H_m"] ) * ref_ds["WND_m"] * ref_ds["TOA_m"]
+        y_HFX["C_H_dWND_TOA"][j]    = ref_ds["C_H_m"] * ( _ds["WND_m"] - ref_ds["WND_m"] ) * ref_ds["TOA_m"]
+        y_HFX["C_H_WND_dTOA"][j]   = ref_ds["C_H_m"] * ref_ds["WND_m"] * ( _ds["TOA_m"] - ref_ds["TOA_m"] )
+        
+        y_HFX["dWND_C_H_TOA_cx"][j]   = ( _ds["WND_m"] - ref_ds["WND_m"] ) * ref_ds["C_H_TOA_cx"]
+        y_HFX["WND_d(C_H_TOA_cx)"][j] = ref_ds["WND_m"] * ( _ds["C_H_TOA_cx"] - ref_ds["C_H_TOA_cx"] )
 
-        y_HFX_full[j]     = _ds["HFX_approx"] - ref_ds["HFX_approx"]
-        y_HFX_dFLHC[j]    = ( _ds["FLHC_mean"] - ref_ds["FLHC_mean"] ) * ref_ds["TOA_mean"]
-        y_HFX_dTOA[j]     = ( _ds["TOA_mean"] - ref_ds["TOA_mean"] ) * ref_ds["FLHC_mean"]
-        y_HFX_dcorr[j]    = ( _ds["FLHCpTOAp_mean"] - ref_ds["FLHCpTOAp_mean"] )
+        y_HFX["dC_H_WND_TOA_cx"][j]   = ( _ds["C_H_m"] - ref_ds["C_H_m"] ) * ref_ds["WND_TOA_cx"]
+        y_HFX["C_H_d(WND_TOA_cx)"][j] = ref_ds["C_H_m"] * ( _ds["WND_TOA_cx"] - ref_ds["WND_TOA_cx"] )
 
-        y_LH_full[j]     = _ds["LH_approx"] - ref_ds["LH_approx"]
-        y_LH_dFLQC[j]    = Lq * ( _ds["FLQC_mean"] - ref_ds["FLQC_mean"] ) * ref_ds["QOA_mean"]
-        y_LH_dQOA[j]     = Lq * ( _ds["QOA_mean"] - ref_ds["QOA_mean"] ) * ref_ds["FLQC_mean"]
-        y_LH_dcorr[j]    = Lq * ( _ds["FLQCpQOAp_mean"] - ref_ds["FLQCpQOAp_mean"] )
+        y_HFX["dTOA_C_H_WND_cx"][j]   = ( _ds["TOA_m"] - ref_ds["TOA_m"] ) * ref_ds["C_H_WND_cx"]
+        y_HFX["TOA_d(C_H_WND_cx)"][j] = ref_ds["TOA_m"] * ( _ds["C_H_WND_cx"] - ref_ds["C_H_WND_cx"] )
+        
+        y_HFX["d(C_H_WND_TOA_cx)"][j] = ( _ds["C_H_WND_TOA_cx"] - ref_ds["C_H_WND_TOA_cx"] )
+
+
+
+        y_LH["real"][j]  = _ds["LH"] - ref_ds["LH"]
+
+        y_LH["full"][j]     = _ds["LH_approx"] - ref_ds["LH_approx"]
+        y_LH["d(C_Q)_WND_QOA"][j]  = Lq * ( _ds["C_Q_m"] - ref_ds["C_Q_m"] ) * ref_ds["WND_m"] * ref_ds["QOA_m"]
+        y_LH["C_Q_dWND_QOA"][j]    = Lq * ref_ds["C_Q_m"] * ( _ds["WND_m"] - ref_ds["WND_m"] ) * ref_ds["QOA_m"]
+        y_LH["C_Q_WND_dQOA"][j]   = Lq * ref_ds["C_Q_m"] * ref_ds["WND_m"] * ( _ds["QOA_m"] - ref_ds["QOA_m"] )
+        
+        y_LH["dWND_C_Q_QOA_cx"][j]   = Lq * ( _ds["WND_m"] - ref_ds["WND_m"] ) * ref_ds["C_Q_QOA_cx"]
+        y_LH["WND_d(C_Q_QOA_cx)"][j] = Lq * ref_ds["WND_m"] * ( _ds["C_Q_QOA_cx"] - ref_ds["C_Q_QOA_cx"] )
+
+        y_LH["dC_Q_WND_QOA_cx"][j]   = Lq * ( _ds["C_Q_m"] - ref_ds["C_Q_m"] ) * ref_ds["WND_QOA_cx"]
+        y_LH["C_Q_d(WND_QOA_cx)"][j] = Lq * ref_ds["C_Q_m"] * ( _ds["WND_QOA_cx"] - ref_ds["WND_QOA_cx"] )
+
+        y_LH["dQOA_C_Q_WND_cx"][j]   = Lq * ( _ds["QOA_m"] - ref_ds["QOA_m"] ) * ref_ds["C_Q_WND_cx"]
+        y_LH["QOA_d(C_Q_WND_cx)"][j] = Lq * ref_ds["QOA_m"] * ( _ds["C_Q_WND_cx"] - ref_ds["C_Q_WND_cx"] )
+        
+        y_LH["d(C_Q_WND_QOA_cx)"][j] = Lq * ( _ds["C_Q_WND_QOA_cx"] - ref_ds["C_Q_WND_QOA_cx"] )
+
 
         x[j] = _ds.attrs["dT"]
         
         
-    y_HFX_res = y_HFX_full - ( y_HFX_dFLHC + y_HFX_dTOA + y_HFX_dcorr )
-    y_LH_res  = y_LH_full  - ( y_LH_dFLQC  + y_LH_dQOA  + y_LH_dcorr  )
+    y_HFX["res"] = y_HFX["full"] - (
+            y_HFX["d(C_H)_WND_TOA"]
+        +   y_HFX["C_H_dWND_TOA"]
+        +   y_HFX["C_H_WND_dTOA"]
+        +   y_HFX["dWND_C_H_TOA_cx"]
+        +   y_HFX["WND_d(C_H_TOA_cx)"]
+        +   y_HFX["dC_H_WND_TOA_cx"]
+        +   y_HFX["C_H_d(WND_TOA_cx)"]
+        +   y_HFX["dTOA_C_H_WND_cx"]
+        +   y_HFX["TOA_d(C_H_WND_cx)"]
+        +   y_HFX["d(C_H_WND_TOA_cx)"]
+    )
+
+    y_LH["res"] = y_LH["full"] - (
+            y_LH["d(C_Q)_WND_QOA"]
+        +   y_LH["C_Q_dWND_QOA"]
+        +   y_LH["C_Q_WND_dQOA"]
+        +   y_LH["dWND_C_Q_QOA_cx"]
+        +   y_LH["WND_d(C_Q_QOA_cx)"]
+        +   y_LH["dC_Q_WND_QOA_cx"]
+        +   y_LH["C_Q_d(WND_QOA_cx)"]
+        +   y_LH["dQOA_C_Q_WND_cx"]
+        +   y_LH["QOA_d(C_Q_WND_cx)"]
+        +   y_LH["d(C_Q_WND_QOA_cx)"]
+    )
+
+
 
 else:
 
@@ -280,35 +370,59 @@ plot_bundles = []
 
 plotting_list = []
 plotting_list.extend([
-    ["Full", y_HFX_full,   ("black", "-")],
-    ["Wind", y_HFX_dFLHC,  ("dodgerblue", "-")],
-    ["Temp", y_HFX_dTOA,   ("red"       , "-")],
-    ["Corr", y_HFX_dcorr,  ("magenta"   , "-")],
-    ["Res",  y_HFX_res,    ("green"     , "--")],
-    ["HFX",  y_HFX,        ("gray"     , "--")],
+    ["Full", y_HFX["full"],   ("black", "--")],
+    ["$ \\Delta \\left(\\overline{C}\\right)_H \\overline{U} \\overline{T}_{OA} $", y_HFX["d(C_H)_WND_TOA"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_H \\Delta \\left(\\overline{U}\\right) \\overline{T}_{OA} $", y_HFX["C_H_dWND_TOA"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_H \\overline{U} \\Delta \\left(\\overline{T}\\right)_{OA} $", y_HFX["C_H_WND_dTOA"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{U}  \\overline{ C'_H T'_{OA} }$", y_HFX["dWND_C_H_TOA_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{U}  \\Delta \\left( \\overline{ C'_H T'_{OA} }\\right) $", y_HFX["WND_d(C_H_TOA_cx)"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{C}_H  \\overline{ U' T'_{OA} }$", y_HFX["dC_H_WND_TOA_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_H  \\Delta \\left( \\overline{ U' T'_{OA}}\\right) $", y_HFX["C_H_d(WND_TOA_cx)"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{T}_{OA}  \\overline{ C'_H U' }$", y_HFX["dTOA_C_H_WND_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{T}_{OA}  \\Delta \\left( \\overline{ C'_H  U'} \\right) $", y_HFX["TOA_d(C_H_WND_cx)"],  ("dodgerblue", "-")],
+    ["$ \\Delta \\left( \\overline{ C'_H  U' T'_{OA} }\\right) $", y_HFX["d(C_H_WND_TOA_cx)"],  ("dodgerblue", "-")],
+    ["Res", y_HFX["res"],  ("gray", "--")],
+
 ])
-plot_bundles.append(dict(title="Sensible heat", plotting_list=plotting_list, ref_val=y_HFX_ref))
+plot_bundles.append(dict(title="Sensible heat", plotting_list=plotting_list, ref_val=y_HFX["ref"]))
 
 
 plotting_list = []
-plotting_list.extend([
-    ["Full", y_LH_full,   ("black", "-")],
-    ["Wind", y_LH_dFLQC,  ("dodgerblue", "-")],
-    ["Vapor", y_LH_dQOA,   ("red"       , "-")],
-    ["Corr", y_LH_dcorr,  ("magenta"   , "-")],
-    ["Res",  y_LH_res,    ("green"     , "--")],
-    ["LH",  y_LH,         ("gray"     , "--")],
-])
-plot_bundles.append(dict(title="Latent heat", plotting_list=plotting_list, ref_val=y_LH_ref))
 
-fig, ax = plt.subplots(len(plot_bundles), 1, figsize=(4, 6), sharex=True)
+plotting_list.extend([
+    ["Full", y_LH["full"],   ("black", "--")],
+    ["$ \\Delta \\left(\\overline{C}\\right)_Q \\overline{U} \\overline{Q}_{OA} $", y_LH["d(C_Q)_WND_QOA"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_Q \\Delta \\left(\\overline{U}\\right) \\overline{Q}_{OA} $", y_LH["C_Q_dWND_QOA"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_Q \\overline{U} \\Delta \\left(\\overline{Q}\\right)_{OA} $", y_LH["C_Q_WND_dQOA"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{U}  \\overline{ C'_Q Q'_{OA} }$", y_LH["dWND_C_Q_QOA_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{U}  \\Delta \\left( \\overline{ C'_Q Q'_{OA} }\\right) $", y_LH["WND_d(C_Q_QOA_cx)"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{C}_Q  \\overline{ U' Q'_{OA} }$", y_LH["dC_Q_WND_QOA_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{C}_Q  \\Delta \\left( \\overline{ U' Q'_{OA}}\\right) $", y_LH["C_Q_d(WND_QOA_cx)"],  ("dodgerblue", "-")],
+
+    ["$ \\Delta \\overline{Q}_{OA}  \\overline{ C'_Q U' }$", y_LH["dQOA_C_Q_WND_cx"],  ("dodgerblue", "-")],
+    ["$ \\overline{Q}_{OA}  \\Delta \\left( \\overline{ C'_Q  U'} \\right) $", y_LH["QOA_d(C_Q_WND_cx)"],  ("dodgerblue", "-")],
+    ["$ \\Delta \\left( \\overline{ C'_Q  U' Q'_{OA} }\\right) $", y_LH["d(C_Q_WND_QOA_cx)"],  ("dodgerblue", "-")],
+    ["Res", y_LH["res"],  ("gray", "--")],
+
+])
+
+plot_bundles.append(dict(title="Latent heat", plotting_list=plotting_list, ref_val=y_LH["ref"]))
+
+fig, ax = plt.subplots(len(plot_bundles), 1, figsize=(8, 12), sharex=True)
 
 for i, plot_bundle in enumerate(plot_bundles):
 
     _ax = ax[i]
     for decomp_name, _y, (color, ls) in plot_bundle["plotting_list"]:
-        _ax.scatter(x, _y, s=20, c=color)
-        _ax.plot(x, _y, color=color, linestyle=ls, label=decomp_name)
+        #_ax.scatter(x, _y, s=20, c=color)
+        _ax.scatter(x, _y, s=20)
+        #_ax.plot(x, _y, color=color, linestyle=ls, label=decomp_name)
+        _ax.plot(x, _y, linestyle=ls, label=decomp_name)
         
         
     _ax.set_title("%s (ref value = %.1f)" % (plot_bundle["title"], plot_bundle["ref_val"],))
@@ -317,7 +431,17 @@ for i, plot_bundle in enumerate(plot_bundles):
     _ax.grid(True)
 
 time_fmt = "%Y/%m/%d %Hh"
-fig.suptitle("Time: %s ~ %s\nAverage: %d ~ %d km" % (time_beg.strftime(time_fmt), time_end.strftime(time_fmt), args.x_rng[0], args.x_rng[1]))
+fig.suptitle("Time: %s ~ %s\nAverage: %d ~ %d km\n($\\overline{C}_H = %.1f$, $L_q \\overline{C}_Q = %.1f$, $\\overline{U} = %.1f$, $\\overline{T}_{OA} = %.1f \\mathrm{K}$, $\\overline{Q}_{OA} = %.1f \\mathrm{g}/\\mathrm{kg}$)" % (
+    time_beg.strftime(time_fmt),
+    time_end.strftime(time_fmt),
+    args.x_rng[0],
+    args.x_rng[1],
+    ref_C_H_m,
+    ref_C_Q_m * Lq,
+    ref_WND_m,
+    ref_TOA_m,
+    ref_QOA_m * 1e3,
+))
 
 ax[-1].set_xlabel("Amplitude [ K ]")
 

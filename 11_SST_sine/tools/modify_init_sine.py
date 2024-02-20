@@ -19,7 +19,7 @@ with open(setting_filename, "r") as f:
 
 T0  = setting['T0']
 dT  = setting['dT']
-wnm = setting['wnm']
+wnm = 1
 
 YC = ds.DY * ( np.arange(Ny) + 0.5 )
 XC = ds.DX * ( np.arange(Nx) + 0.5 )
@@ -33,6 +33,7 @@ for j in range(Ny):
 ds['F'][:] = setting['f0']
 ds['E'][:] = 0
 
+ds['XLAND'][:] = 2
 
 print("Output file : ", output_filename)
 ds.to_netcdf(output_filename)

@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--input-dir', type=str, help='Input directory.', required=True)
 parser.add_argument('--output', type=str, help='Output filename in png.', default="")
 parser.add_argument('--extra-title', type=str, help='Title', default="")
+parser.add_argument('--overwrite-title', type=str, help='If set then title will be set to this.', default="")
 parser.add_argument('--blh-method', type=str, help='Method to determine boundary layer height', default=[], nargs='+', choices=['bulk', 'grad'])
 parser.add_argument('--SST-rng', type=float, nargs=2, help='Title', default=[14.5, 16.5])
 parser.add_argument('--no-display', action="store_true")
@@ -57,7 +58,7 @@ ds = wrf_load_helper.loadWRFDataFromDir(
     beg_time = time_beg,
     end_time = time_end,
     prefix="wrfout_d01_",
-    avg=False,
+    avg = "ALL",
     verbose=False,
     inclusive="both",
 )
@@ -191,16 +192,21 @@ if args.plot_check:
     plt.show(block=False)
 
 fig, ax = plt.subplots(
-    3, 1,
-    figsize=(8, 9),
+    5, 1,
+    figsize=(8, 15),
     subplot_kw=dict(aspect="auto"),
-    gridspec_kw=dict(height_ratios=[1, 1, 1], right=0.8),
+    gridspec_kw=dict(height_ratios=[3, 3, 3, 1, 1], hspace=0.3, right=0.8),
     constrained_layout=False,
     sharex=True,
 )
 
 time_fmt="%y/%m/%d %Hh"
-fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.strftime(time_fmt), time_end.strftime(time_fmt)))
+
+if args.overwrite_title == "":
+    fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.strftime(time_fmt), time_end.strftime(time_fmt)))
+    
+else:
+    fig.suptitle(args.overwrite_title)
 
 
 u_levs = np.linspace(4, 18, 15)
@@ -213,55 +219,66 @@ mappable1 = ax[0].contourf(X_W, Z_W, ds.W * 1e2, levels=w_levs, cmap="bwr", exte
 cs = ax[0].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
 plt.clabel(cs)
 cax = tool_fig_config.addAxesNextToAxes(fig, ax[0], "right", thickness=0.03, spacing=0.05)
+cbar0 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
+
+
+U = (ds.U[:, :-1] + ds.U[:, 1:]) / 2
+mappable1 = ax[1].contourf(X_T, Z_T, U, levels=u_levs, cmap="Spectral_r", extend="both")
+cs = ax[1].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
+plt.clabel(cs)
+cax = tool_fig_config.addAxesNextToAxes(fig, ax[1], "right", thickness=0.03, spacing=0.05)
 cbar1 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
+
+
+mappable1 = ax[2].contourf(X_T, Z_T, ds.V, levels=v_levs, cmap="Spectral_r", extend="both")
+cs = ax[2].contour(X_T, Z_T, theta, levels=theta_levs, colors='k')
+plt.clabel(cs)
+cax = tool_fig_config.addAxesNextToAxes(fig, ax[2], "right", thickness=0.03, spacing=0.05)
+cbar2 = plt.colorbar(mappable1, cax=cax, orientation="vertical")
+
+
+for _ax in ax[0:3].flatten():
+    _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
+
 
 
 
 U10_mean = np.mean(ds.U10)
 V10_mean = np.mean(ds.V10)
-ax[1].plot(X_sT, ds.U10 - U10_mean, color="black", label="$U_{\\mathrm{10m}} - \\overline{U}_{\\mathrm{10m}}$")
-ax[1].plot(X_sT, ds.V10 - V10_mean, color="red",   label="$V_{\\mathrm{10m}} - \\overline{V}_{\\mathrm{10m}}$")
-
-
-
-for method in args.blh_method:
-    blh = bl[method]['blh']
-    color = dict(grad="lime", bulk="magenta")[method]
-    for _ax in ax[0:1].flatten():
-        _ax.scatter(blh[:, 0], blh[:, 1], s=2, c=color)
-        
-        _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
-
-
-for _ax in ax[0:1].flatten():
-    _ax.plot(X_sT, ds.PBLH, color="pink", linestyle="--")
-
+ax[3].plot(X_sT, ds.U10 - U10_mean, "k-", label="$U_{\\mathrm{10m}} - \\overline{U}_{\\mathrm{10m}}$")
+ax[3].plot(X_sT, ds.V10 - V10_mean, "k--",   label="$V_{\\mathrm{10m}} - \\overline{V}_{\\mathrm{10m}}$")
 
 # SST
-ax[2].plot(X_sT, SST, color='blue')
-ax[2].plot(X_sT, ds.T2 - zerodegC, color='red')
+ax[4].plot(X_sT, SST, color='blue', label="SST")
+ax[4].plot(X_sT, ds.T2 - zerodegC, color='red', label="$T_{\\mathrm{2m}}$")
 
 
-ax[0].set_title("W [$\\mathrm{cm} / \\mathrm{s}$]")
-ax[1].set_title("$\\left( \\overline{U}_{\\mathrm{10m}}, \\overline{V}_{\\mathrm{10m}}\\right) = \\left( %.2f, %.2f \\right)$" % (U10_mean, V10_mean,))
-ax[1].legend()
-ax[2].legend()
-#ax[1].set_title("U [$\\mathrm{m} / \\mathrm{s}$]")
-#ax[2].set_title("V [$\\mathrm{m} / \\mathrm{s}$]")
+cbar0.ax.set_ylabel("W [$\\mathrm{cm} / \\mathrm{s}$]")
+cbar1.ax.set_ylabel("U [$\\mathrm{m} / \\mathrm{s}$]")
+cbar2.ax.set_ylabel("V [$\\mathrm{m} / \\mathrm{s}$]")
 
-for _ax in ax[0:1].flatten():
+
+
+for _ax in ax[0:3].flatten():
     _ax.set_ylim(args.z_rng)
     _ax.set_ylabel("z [ m ]")
 
-ax[1].set_ylim(args.U10_rng)
-ax[1].set_ylabel("[ $ \\mathrm{m} / \\mathrm{s}$ ]", color="black")
-ax[2].set_ylabel("[ $ \\mathrm{K}$ ]", color="black")
+
+ax[3].legend()
+ax[3].set_ylabel("[ $ \\mathrm{m} / \\mathrm{s} $ ]", color="black")
+ax[3].set_title("$\\left( \\overline{U}_{\\mathrm{10m}}, \\overline{V}_{\\mathrm{10m}}\\right) = \\left( %.2f, %.2f \\right)$" % (U10_mean, V10_mean,))
+
+ax[4].legend()
+ax[4].set_ylabel("[ $ \\mathrm{K}$ ]", color="black")
 
 for _ax in ax.flatten():
     _ax.grid()
     _ax.set_xlabel("[km]")
     _ax.set_xlim(np.array(args.x_rng))
 
+
+ax[3].set_ylim([-2.5, 2.5])
+ax[4].set_ylim([13.5, 16.5])
 
 if args.output != "":
     print("Saving output: ", args.output)

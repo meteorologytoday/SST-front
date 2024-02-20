@@ -1,8 +1,16 @@
 #!/bin/bash
 
+if [ "$1" = "" ]; then
+
+    echo "Error: First argument must be given (geostrophic wind U)"
+    exit 1
+
+fi
+
+
 SST_base=288.15 # 15 degC
 RH=90
-U=15
+U=$1
 deltaGamma=3e-3
 z_st=10000.0
 

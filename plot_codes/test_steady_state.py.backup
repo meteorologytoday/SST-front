@@ -1,0 +1,158 @@
+import xarray as xr
+import pandas as pd
+import numpy as np
+import argparse
+import load_helper
+import tool_fig_config
+import diagnostics
+import datetime
+import wrf_load_helper 
+
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--input-dir', type=str, help='Input directory.', required=True)
+parser.add_argument('--output', type=str, help='Output filename in png.', default="")
+parser.add_argument('--extra-title', type=str, help='Title', default="")
+parser.add_argument('--no-display', action="store_true")
+parser.add_argument('--time-rng', type=int, nargs=2, help="Time range in hours after --exp-beg-time", required=True)
+parser.add_argument('--exp-beg-time', type=str, help='analysis beg time', required=True)
+parser.add_argument('--wrfout-data-interval', type=int, help='Time interval between each adjacent record in wrfout files in seconds.', required=True)
+parser.add_argument('--frames-per-wrfout-file', type=int, help='Number of frames in each wrfout file.', required=True)
+
+args = parser.parse_args()
+
+print(args)
+
+exp_beg_time = pd.Timestamp(args.exp_beg_time)
+wrfout_data_interval = pd.Timedelta(seconds=args.wrfout_data_interval)
+
+time_beg = exp_beg_time + pd.Timedelta(minutes=args.time_rng[0])
+time_end = exp_beg_time + pd.Timedelta(minutes=args.time_rng[1])
+
+wsm = wrf_load_helper.WRFSimMetadata(
+    start_datetime  = exp_beg_time,
+    data_interval   = wrfout_data_interval,
+    frames_per_file = args.frames_per_wrfout_file,
+)
+
+
+# Loading data
+print("Loading wrf dir: %s" % (args.input_dir,))
+
+leap=pd.Timedelta(hours=1)
+merge = []
+for _time_beg in pd.date_range(time_beg, time_end, freq=leap, inclusive="left"):
+
+    _time_end = _time_beg + leap
+    print("Loading time range: ", _time_beg, "~", _time_end)
+
+    ds = wrf_load_helper.loadWRFDataFromDir(
+        wsm, 
+        args.input_dir,
+        beg_time = _time_beg,
+        end_time = _time_end,
+        prefix="wrfout_d01_",
+        avg=True,
+        verbose=False,
+        inclusive="left",
+    )
+
+    ds = ds.mean(dim=['south_north', 'south_north_stag'], keep_attrs=True)
+
+    merge.append(ds)
+
+ds = xr.merge(merge)
+
+print(ds)
+print("Done loading data.")
+
+Nx = ds.dims['west_east']
+Nz = ds.dims['bottom_top']
+
+X_sU = ds.DX * np.arange(Nx+1) / 1e3
+X_sT = (X_sU[1:] + X_sU[:-1]) / 2
+X_T = np.repeat(np.reshape(X_sT, (1, -1)), [Nz,], axis=0)
+
+t = ds.coords["time"].to_numpy()
+print(t)
+
+
+print(t[1:])
+print(t[:-1])
+delta_t = t[1:] - t[:-1]
+mid_t = t[:-1] + 0.5 * delta_t
+
+if delta_t.dtype != "timedelta64[ns]":
+    raise Exception("Type of time is not timedelta64[ns]")
+
+delta_t = delta_t.astype(np.float64) / 1e9
+print(delta_t)
+
+print("delta_t shape = ", delta_t.shape, " ; of type: ", delta_t.dtype)
+print(ds.U10.to_numpy().shape)
+print(ds.U10.isel(time=slice(1, None, None)).to_numpy().shape)
+print(ds.U10.isel(time=slice(None, -1, None)).to_numpy().shape)
+
+dWdt = ( ds.W.isel(time=slice(1, None, None), bottom_top_stag=20).to_numpy() - ds.W.isel(time=slice(0, -1, None), bottom_top_stag=20).to_numpy() ) / delta_t[:, None]
+
+dU10dt = ( ds.U10.isel(time=slice(1, None, None)).to_numpy() - ds.U10.isel(time=slice(0, -1, None)).to_numpy() ) / delta_t[:, None]
+
+
+max_absdU10dt = np.amax(np.abs(dU10dt), axis=1)
+rms_dU10dt = np.mean(dU10dt**2, axis=1)**0.5
+
+max_absdWdt = np.amax(np.abs(dWdt), axis=1)
+rms_dWdt    = np.mean(dWdt**2, axis=1)**0.5
+
+
+ratio_rms_dU10dt = np.zeros_like(rms_dU10dt)
+ratio_rms_dU10dt[1:] = (rms_dU10dt[1:] - rms_dU10dt[:-1]) / rms_dU10dt[1:]
+ratio_rms_dU10dt[0] = np.nan
+
+
+print("Shape of max_absdU10dt: ", max_absdU10dt.shape)
+print("Shape of rms_dU10dt: ", rms_dU10dt.shape)
+
+print("Loading matplotlib...")
+import matplotlib
+if args.no_display:
+    matplotlib.use('Agg')
+else:
+    matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+print("Done")
+
+fig, ax = plt.subplots(
+    2, 1,
+    figsize=(6, 8),
+    subplot_kw=dict(aspect="auto"),
+    constrained_layout=False,
+    sharex=True,
+)
+
+time_fmt="%y/%m/%d %Hh"
+fig.suptitle("%sTime: %s ~ %s" % (args.extra_title, time_beg.strftime(time_fmt), time_end.strftime(time_fmt)))
+
+_ax = ax.flatten()[0]
+_ax.plot(mid_t, max_absdU10dt, "b-", label="max")
+_ax.plot(mid_t, rms_dU10dt, "r-", label="rms")
+
+_twinx = _ax.twinx()
+_twinx.plot(mid_t, ratio_rms_dU10dt, "r--")
+
+_ax = ax.flatten()[1]
+_ax.plot(mid_t, max_absdWdt, "b-", label="max")
+_ax.plot(mid_t, rms_dWdt, "r-", label="rms")
+
+for _ax in ax.flatten():
+    _ax.legend()
+    _ax.grid()
+    _ax.set_xlabel("Time")
+
+if args.output != "":
+    print("Saving output: ", args.output)
+    fig.savefig(args.output, dpi=300)
+
+if not args.no_display:
+    print("Showing figure...")
+    plt.show()
+
