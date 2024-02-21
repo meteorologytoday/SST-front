@@ -7,10 +7,7 @@ output_filename = "wrfinput_d01"
 setting_filename = "run_setting.json"
 
 
-ds = xr.open_dataset(input_filename, engine='scipy')
-
-ds.LU_INDEX[:, :, :] = 16
-
+ds = xr.open_dataset(input_filename, engine='netcdf4')
 
 _, Ny, Nx = ds.TSK.shape
 
@@ -32,8 +29,6 @@ for j in range(Ny):
 
 ds['F'][:] = setting['f0']
 ds['E'][:] = 0
-
-ds['XLAND'][:] = 2
 
 print("Output file : ", output_filename)
 ds.to_netcdf(output_filename)

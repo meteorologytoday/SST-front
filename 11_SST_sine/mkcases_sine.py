@@ -10,28 +10,39 @@ def pleaseRun(cmd):
 
 lab_name = "lab_sine"
 
-ref_WRF_root = "/home/t2hsu/projects/WRF_frontcases/01_various_SST_front_wavelength/WRF-4.3.3_em_quarter_ss"
+ref_WRF_root = "/home/t2hsu/models/WRF/WRF-4.3.3-paper2024-SST-sine"
 ref_namelist = "namelist.input"
 ref_caserundir = "%s/test/em_quarter_ss" % ( ref_WRF_root,)
-ref_softlink_run_dir = "%s/run" % (ref_WRF_root,)
-ref_softlink_main_dir = "%s/main" % (ref_WRF_root,)
 
-# Needed files for running idealized model
-ref_softlinks = [
-    "bulkdens.asc_s_0_03_0_9",
-    "bulkradii.asc_s_0_03_0_9",
-    "capacity.asc",
-    "coeff_p.asc",
-    "coeff_q.asc",
-    "constants.asc",
-    "kernels.asc_s_0_03_0_9",
-    "kernels_z.asc",
-    "masses.asc",
-    "termvels.asc",
+
+ref_softlink_infos = [
+    dict(
+        dir_path = "%s/run" % (ref_WRF_root,),
+        files = [
+            "bulkdens.asc_s_0_03_0_9",
+            "bulkradii.asc_s_0_03_0_9",
+            "capacity.asc",
+            "coeff_p.asc",
+            "coeff_q.asc",
+            "constants.asc",
+            "kernels.asc_s_0_03_0_9",
+            "kernels_z.asc",
+            "masses.asc",
+            "termvels.asc",
+            "LANDUSE.TBL",
+        ],
+    ),
+
+    dict(
+        dir_path = "%s/main" % (ref_WRF_root,),
+        files = [
+            "ideal.exe",
+            "wrf.exe",
+        ],
+    ),
+
+
 ]
-
-
-ref_softlinks_exes = ["ideal.exe", "wrf.exe"]
 
 
 bl_scheme_mapping = dict(
@@ -47,13 +58,15 @@ mp_heating_mapping = dict(
 )
 
 #Us    = np.array([0.0, 5.0, 10.0, 15.0])
+#Us    = np.array([5.0, 15.0])
 Us    = np.array([15.0])
+
 f0    = 1e-4
 T0    = 273.15 + 15.0
-dTs    = np.linspace(0, 1.0, 11)
+dTs    = np.linspace(0, 1.0, 6)
 bl_scheme = ["MYNN25",]
 mp_heating = ["off"]
-#Lxs = np.array([50, 100, 200, 500,], dtype=float) * 1e3
+Lxs = np.array([50, 100, 200,], dtype=float) * 1e3
 Lxs = np.array([100,], dtype=float) * 1e3
 
 dx = 2000.0 # 2km
@@ -88,6 +101,7 @@ for i, dT in enumerate(dTs):
 
                     sim_cases.append({
                         'casename' : "case_mph-%s_Lx%03d_U%02d_dT%03d_%s" % (_mp_heating, int(Lx/1e3), U, dT*1e2, _bl_scheme),
+                        'casename_short' : "m%sL%03dU%02ddT%03d%s" % (_mp_heating, int(Lx/1e3), U, dT*1e2, _bl_scheme),
                         'T0'         : T0,
                         'dT'         : dT,
                         'Lx'         : Lx,
@@ -129,11 +143,10 @@ for i, sim_case in enumerate(sim_cases):
 
         pleaseRun("mkdir -p %s" % (case_folder,) )
 
-        for fname in ref_softlinks:
-            pleaseRun("ln -s %s/%s %s/" % (ref_softlink_run_dir, fname, case_folder))
-
-        for fname in ref_softlinks_exes:
-            pleaseRun("ln -s %s/%s %s/" % (ref_softlink_main_dir, fname, case_folder))
+        for ref_softlink_info in ref_softlink_infos:
+            
+            for fname in ref_softlink_info['files']:
+                pleaseRun("ln -s %s/%s %s/" % (ref_softlink_info["dir_path"], fname, case_folder))
 
 
         sounding_filename = getSoundingFilename(sim_case["U"])
@@ -154,4 +167,33 @@ for i, sim_case in enumerate(sim_cases):
         # Write settings
         with open('%s/run_setting.json' % (case_folder,), 'w', encoding='utf-8') as f:
             json.dump(sim_case, f, ensure_ascii=False, indent=4)
+
+
+    for partition, memory in [
+        ["cw3e-compute", "40G",],
+        ["cw3e-shared",  "20G",],
+    ]: 
+        with open('%s/submit_%s.sh' % (case_folder, partition), 'w', encoding='utf-8') as f:
+            f.write("""#!/bin/bash
+#SBATCH -p {partition:s}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem={memory:s}
+#SBATCH -t 05:00:00
+#SBATCH -J {jobname:s}
+#SBATCH -A csg102
+#SBATCH -o {jobname:s}.%j.%N.out
+#SBATCH -e {jobname:s}.%j.%N.err
+#SBATCH --export=ALL
+
+export SLURM_EXPORT_ENV=ALL
+
+source /home/t2hsu/.bashrc_WRF4.3_gcc
+
+echo "Running run_sine.sh"
+bash ./run_sine.sh
+""".format(jobname=sim_case['casename_short'], partition=partition, memory=memory))
+
+
 

@@ -1,14 +1,16 @@
 #!/bin/bash
 
-trap 'kill $( jobs -p )' EXIT
+#trap 'kill $( jobs -p )' EXIT
 
-lab_dir=lab_sine
+lab_dir=./lab_sine
 
 N=11
 target_file=wrfout_d01_2001-01-04_23:00:00
 #target_file=wrfout_d01_2001-01-08_23:00:00
 for run_dir in $( ls $lab_dir ) ; do
 
+
+if [ ] ; then
     if ! [[ "$run_dir" =~ mph-off ]] ; then
         echo "Skip $run_dir "
         continue
@@ -29,24 +31,27 @@ for run_dir in $( ls $lab_dir ) ; do
         continue
     fi
 
-    if ! [[ "$run_dir" =~ dT100 ]] ; then
-        echo "Skip $run_dir "
-        continue
-    fi
-
+#    if ! [[ "$run_dir" =~ dT100 ]] ; then
+#        echo "Skip $run_dir "
+#        continue
+#    fi
+fi
 
 
 
     full_run_dir=$lab_dir/$run_dir
 
     # Test if wrfout is there
+
+    cwd=`pwd`
     if [ -f "$full_run_dir/$target_file" ]; then
         echo "Target file detected in $run_dir . Skip."
     else
-        ((i=i%N)); ((i++==0)) && wait       
-        echo "Run: $run_dir" 
-        ( echo "Running case $run_dir " ; cd $full_run_dir ; bash ./run_sine.sh ) & 
+        echo "Submitting the case: $run_dir" 
+        cd $full_run_dir
+        sbatch submit_cw3e-shared.sh
+        #sbatch submit_cw3e-compute.sh
     fi
+    cd $cwd
 done
 
-wait
