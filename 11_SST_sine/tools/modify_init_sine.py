@@ -26,6 +26,8 @@ LX = ds.DX * Nx
 TSK = T0 + dT * np.sin(2 * np.pi * XC * wnm / LX)
 for j in range(Ny):
     ds.TSK[0, j, :] = TSK
+    ds.SST[0, j, :] = TSK
+    ds.TMN[0, j, :] = TSK
 
 ds['F'][:] = setting['f0']
 ds['E'][:] = 0

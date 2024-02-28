@@ -57,9 +57,7 @@ mp_heating_mapping = dict(
     off = 1,
 )
 
-#Us    = np.array([0.0, 5.0, 10.0, 15.0])
-#Us    = np.array([5.0, 15.0])
-Us    = np.array([15.0])
+Us    = np.array([5.0, 15.0])
 
 f0    = 1e-4
 T0    = 273.15 + 15.0
@@ -67,7 +65,12 @@ dTs    = np.linspace(0, 1.0, 6)
 bl_scheme = ["MYNN25",]
 mp_heating = ["off"]
 Lxs = np.array([50, 100, 200,], dtype=float) * 1e3
-Lxs = np.array([100,], dtype=float) * 1e3
+
+# FOr high parameter space resolution
+dTs    = np.array([1.0])
+Us    = np.array([0, 5.0, 10, 15.0, 20])
+Lxs = np.array([20, 40, 60, 80, 100, 120, 140, 160, 180, 200,], dtype=float) * 1e3
+
 
 dx = 2000.0 # 2km
 dy = 2000.0 # 2km

@@ -4,9 +4,8 @@
 
 lab_dir=./lab_sine
 
-N=11
 target_file=wrfout_d01_2001-01-04_23:00:00
-#target_file=wrfout_d01_2001-01-08_23:00:00
+#target_file=wrfout_d01_2001-01-05_23:00:00
 for run_dir in $( ls $lab_dir ) ; do
 
 
